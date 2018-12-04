@@ -1,4 +1,4 @@
-MYCFLAGS = -g -O0 -Wall -fno-strict-aliasing -I./
+MYCFLAGS = -g -O0 -Wall -fno-strict-aliasing -I./ -lpthread
 
 SRCS = tun-demo.c
 all: Vnet-card

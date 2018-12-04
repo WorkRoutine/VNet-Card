@@ -78,6 +78,11 @@ int fifo_init(unsigned long base)
     return 0;
 }
 
+void fifo_release(unsigned long base)
+{
+    memset((unsigned long *)base, 0, RESERVED_SIZES);
+}
+
 int reload_fifo(unsigned long base)
 {
     return 0;
@@ -118,7 +123,7 @@ int InitLinkQueue(unsigned long base)
     if (p == NULL)
         return -1;
     else {
-        p->base = MEM_OFFSET;
+        p->base = 0;
         p->size = 0;
         p->next = NULL;
         fifo_head->front = p;
@@ -146,7 +151,7 @@ int IsQueueEmpty(unsigned long base)
 int PushElement(unsigned long begin, unsigned long base, unsigned long size)
 {
     struct node *p;
-    struct head *fifo_head = (struct head *)(base + HEAD_OFFSET);
+    struct head *fifo_head = (struct head *)(begin + HEAD_OFFSET);
 
     p = alloc_node(begin);
     if (p == NULL)

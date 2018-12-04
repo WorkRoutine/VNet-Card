@@ -17,11 +17,10 @@ struct head
 };
 
 #define BASE_PHY_ADDR            (0x50000000)
-#define FIFO_BUFFER              (0x400000)
+#define FIFO_BUFFER              (0x400)
 #define X86_WR_FIFO_OFFSET       (0x00000000)
 #define X86_RD_FIFO_OFFSET       (X86_WR_FIFO_OFFSET + FIFO_BUFFER)
 
-#define TOTAL_SIZES              ((FIFO_BUFFER) * 2)
 #define NODE_NUM                 (256)
 #define NODE_SIZES               ((NODE_NUM + 1) * sizeof(struct node))
 #define EFLAGS_BYTES             (4)
@@ -35,7 +34,8 @@ struct head
 #define NODE_OFFSET              (BITMAP_OFFSET + BITMAP_BYTES)
 #define RESERVED_SIZES           (NODE_OFFSET + NODE_SIZES)
 #define MEM_OFFSET               (RESERVED_SIZES)
-#define MEM_SIZES                (TOTAL_SIZES - MEM_OFFSET)
+#define TOTAL_SIZES              ((FIFO_BUFFER + RESERVED_SIZES) * 2)
+#define MEM_SIZES                (FIFO_BUFFER)
 #define FIFO_MAGIC               0x91929400
 
 extern int fifo_init(unsigned long base);
@@ -48,6 +48,7 @@ extern int GetHeadElement(unsigned long base, unsigned long *pbase,
                                               unsigned long *psize);
 extern int reload_fifo(unsigned long base);
 extern int InitLinkQueue(unsigned long base);
+extern void fifo_release(unsigned long base);
 
 extern unsigned char *bitmap_node;
 extern struct node *node_list;
