@@ -18,8 +18,8 @@ struct head
 
 #define BASE_PHY_ADDR            (0x50000000)
 #define FIFO_BUFFER              (0x400000)
-#define X86_TO_FPGA_OFFSET       (0x00000000)
-#define FPGA_TO_X86_OFFSET       (X86_TO_FPGA_OFFSET + FIFO_BUFFER)
+#define X86_WR_FIFO_OFFSET       (0x00000000)
+#define X86_RD_FIFO_OFFSET       (X86_WR_FIFO_OFFSET + FIFO_BUFFER)
 
 #define TOTAL_SIZES              ((FIFO_BUFFER) * 2)
 #define NODE_NUM                 (256)
@@ -39,11 +39,20 @@ struct head
 #define FIFO_MAGIC               0x91929400
 
 extern int fifo_init(unsigned long base);
-extern int IsQueueEmpty(void);
-extern int PushElement(unsigned long base, unsigned long size);
-extern int PopElement(unsigned long *pbase, unsigned long *psize);
-extern int GetHeadElement(unsigned long *pbase, unsigned long *psize);
+extern int IsQueueEmpty(unsigned long base);
+extern int PushElement(unsigned long begin, unsigned long base, 
+                                              unsigned long size);
+extern int PopElement(unsigned long base, unsigned long *pbase, 
+                                              unsigned long *psize);
+extern int GetHeadElement(unsigned long base, unsigned long *pbase, 
+                                              unsigned long *psize);
 extern int reload_fifo(unsigned long base);
-extern int InitLinkQueue(void);
+extern int InitLinkQueue(unsigned long base);
+
+extern unsigned char *bitmap_node;
+extern struct node *node_list;
+extern struct head *fifo_head;
+extern unsigned int *fifo_eflags;
+extern unsigned int *fifo_magic;
 
 #endif

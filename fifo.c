@@ -15,17 +15,12 @@
  *
  */
 
-unsigned char *bitmap_node = NULL;
-struct node *node_list = NULL;
-struct head *fifo_head = NULL;
-unsigned int *fifo_eflags = NULL;
-unsigned int *fifo_magic = NULL;
-
 /*
  * Obtain a free node index.
  */
-static int bitmap_alloc(void)
+static int bitmap_alloc(unsigned long base)
 {
+    unsigned char *bitmap_node = (unsigned char *)(base + BITMAP_OFFSET);
     int i, j;
 
     if (bitmap_node == NULL)
@@ -45,8 +40,9 @@ static int bitmap_alloc(void)
 /*
  * Release a unused node by index.
  */
-static int bitmap_free(int offset)
+static int bitmap_free(unsigned long base, int offset)
 {
+    unsigned char *bitmap_node = (unsigned char *)(base + BITMAP_OFFSET);
     int i, j;
 
     if (bitmap_node == NULL)
@@ -68,11 +64,11 @@ static int bitmap_free(int offset)
  */
 int fifo_init(unsigned long base)
 {
+    unsigned int *fifo_magic;
+    struct head *fifo_head;
+
     /* Clear all Reserved memory */
     memset((unsigned long *)base, 0, RESERVED_SIZES);
-    bitmap_node = (unsigned char *)(base + BITMAP_OFFSET);
-    node_list = (struct node *)(base + NODE_OFFSET);
-    fifo_eflags = (unsigned int *)(base + EFLAGS_OFFSET);
     fifo_magic = (unsigned int *)(base + MAGIC_OFFSET);
     *fifo_magic = FIFO_MAGIC;
     fifo_head = (struct head *)(base + HEAD_OFFSET);
@@ -84,25 +80,19 @@ int fifo_init(unsigned long base)
 
 int reload_fifo(unsigned long base)
 {
-    bitmap_node = (unsigned char *)(base + BITMAP_OFFSET);
-    node_list = (struct node *)(base + NODE_OFFSET);
-    fifo_eflags = (unsigned int *)(base + EFLAGS_OFFSET);
-    fifo_magic = (unsigned int *)(base + MAGIC_OFFSET);
-    *fifo_magic = FIFO_MAGIC;
-    fifo_head = (struct head *)(base + HEAD_OFFSET);
-
     return 0;
 }
 
 /*
  * Allocate new node
  */
-static struct node *alloc_node(void)
+static struct node *alloc_node(unsigned long base)
 {
     int index;
     struct node *node;
+    struct node *node_list = (struct node *)(base + NODE_OFFSET);
 
-    index = bitmap_alloc();
+    index = bitmap_alloc(base);
     if (index < 0)
         return NULL;
     node = node_list + index;
@@ -114,16 +104,17 @@ static struct node *alloc_node(void)
 }
 
 /* Free node */
-static void free_node(struct node *node)
+static void free_node(unsigned long base, struct node *node)
 {
-    bitmap_free(node->index);
+    bitmap_free(base, node->index);
 }
 
-int InitLinkQueue(void)
+int InitLinkQueue(unsigned long base)
 {
     struct node *p;
+    struct head *fifo_head = (struct head *)(base + HEAD_OFFSET);
 
-    p = alloc_node();
+    p = alloc_node(base);
     if (p == NULL)
         return -1;
     else {
@@ -139,8 +130,10 @@ int InitLinkQueue(void)
 /*
  * Verify FIFO is empty
  */
-int IsQueueEmpty(void)
+int IsQueueEmpty(unsigned long base)
 {
+    struct head *fifo_head = (struct head *)(base + HEAD_OFFSET);
+
     if (fifo_head->front == fifo_head->rear)
         return 1;
     else
@@ -150,11 +143,12 @@ int IsQueueEmpty(void)
 /*
  * Push new node into FIFO
  */
-int PushElement(unsigned long base, unsigned long size)
+int PushElement(unsigned long begin, unsigned long base, unsigned long size)
 {
     struct node *p;
+    struct head *fifo_head = (struct head *)(base + HEAD_OFFSET);
 
-    p = alloc_node();
+    p = alloc_node(begin);
     if (p == NULL)
         return -1;
 
@@ -170,11 +164,12 @@ int PushElement(unsigned long base, unsigned long size)
 /*
  * Pop node from FIFO
  */
-int PopElement(unsigned long *pbase, unsigned long *psize)
+int PopElement(unsigned long base, unsigned long *pbase, unsigned long *psize)
 {
     struct node *p;
+    struct head *fifo_head = (struct head *)(base + HEAD_OFFSET);
 
-    if (IsQueueEmpty())
+    if (IsQueueEmpty(base))
         return -1;
 
     p = fifo_head->front->next;
@@ -184,7 +179,7 @@ int PopElement(unsigned long *pbase, unsigned long *psize)
     if (fifo_head->front->next == NULL)
         fifo_head->rear = fifo_head->front;
 
-    free_node(p);
+    free_node(base, p);
 
     return 0;
 }
@@ -192,10 +187,13 @@ int PopElement(unsigned long *pbase, unsigned long *psize)
 /* 
  * Obtain data from FIFO head node.
  */
-int GetHeadElement(unsigned long *pbase, unsigned long *psize)
+int GetHeadElement(unsigned long base, unsigned long *pbase, 
+                                              unsigned long *psize)
 {
-    if (IsQueueEmpty()) {
-        *pbase = MEM_OFFSET;
+    struct head *fifo_head = (struct head *)(base + HEAD_OFFSET);
+
+    if (IsQueueEmpty(base)) {
+        *pbase = 0;
         *psize = 0;
         return 0;
     }
