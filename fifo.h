@@ -16,11 +16,8 @@ struct head
     struct node *rear;
 };
 
-#define BASE_PHY_ADDR            (0x50000000)
+#define BASE_PHY_ADDR            (0x5000000)
 #define FIFO_BUFFER              (0x400)
-#define X86_WR_FIFO_OFFSET       (0x00000000)
-#define X86_RD_FIFO_OFFSET       (X86_WR_FIFO_OFFSET + FIFO_BUFFER)
-
 #define NODE_NUM                 (256)
 #define NODE_SIZES               ((NODE_NUM + 1) * sizeof(struct node))
 #define EFLAGS_BYTES             (4)
@@ -34,9 +31,14 @@ struct head
 #define NODE_OFFSET              (BITMAP_OFFSET + BITMAP_BYTES)
 #define RESERVED_SIZES           (NODE_OFFSET + NODE_SIZES)
 #define MEM_OFFSET               (RESERVED_SIZES)
-#define TOTAL_SIZES              ((FIFO_BUFFER + RESERVED_SIZES) * 2)
+#define TOTAL_SIZES              (FIFO_BUFFER + RESERVED_SIZES)
 #define MEM_SIZES                (FIFO_BUFFER)
 #define FIFO_MAGIC               0x91929400
+
+#define X86_WR_FIFO_OFFSET       (0x00000000)
+#define X86_RD_FIFO_OFFSET       (X86_WR_FIFO_OFFSET + TOTAL_SIZES)
+#define ARM_RD_FIFO_OFFSET       (X86_WR_FIFO_OFFSET)
+#define ARM_WR_FIFO_OFFSET       (ARM_RD_FIFO_OFFSET + TOTAL_SIZES)
 
 extern int fifo_init(unsigned long base);
 extern int IsQueueEmpty(unsigned long base);

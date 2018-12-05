@@ -105,6 +105,7 @@ static struct node *alloc_node(unsigned long base)
     memset(node, 0, sizeof(struct node));
 
     node->index = index;
+
     return node;
 }
 
@@ -174,7 +175,7 @@ int PopElement(unsigned long base, unsigned long *pbase, unsigned long *psize)
     struct node *p;
     struct head *fifo_head = (struct head *)(base + HEAD_OFFSET);
 
-    if (IsQueueEmpty(base))
+    if (IsQueueEmpty((unsigned long)base))
         return -1;
 
     p = fifo_head->front->next;

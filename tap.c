@@ -104,7 +104,7 @@ static int route_add(char *interface_name)
 /*
  * Establish a tun device.
  */
-int tun_create(char *dev, int flags)
+int tun_create(char *dev, int flags, char *ip)
 {
     struct ifreq ifr;
     int fd, err;
@@ -133,6 +133,8 @@ int tun_create(char *dev, int flags)
     interface_up(dev);
     /* Set up route table */
     route_add(dev);
+    /* Set up ip */
+//    set_ipaddr(dev, ip);
 
     return fd;
 }

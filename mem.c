@@ -16,23 +16,24 @@
 
 #include "mem.h"
 
-int mem_init(unsigned long phy_addr, unsigned long size, 
-                            unsigned long *base)
+unsigned long *mem_init(unsigned long phy_addr, unsigned long size)
 {
+    unsigned long *base;
     int fd;
 
     fd = open("/dev/mem", O_RDWR | O_SYNC);
     if (fd < 0)
-        return -1;
+        return NULL;
+
 
     base = (unsigned long *)mmap((unsigned long *)phy_addr, size, 
-                        PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+                    PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (!base) {
         close(fd);
-        return -1;
+        return NULL;
     }
 
-    return fd;
+    return base;
 }
 
 void mem_exit(int fd, unsigned long *base, unsigned long size)
