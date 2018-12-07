@@ -26,13 +26,14 @@ unsigned long *mem_init(unsigned long phy_addr, unsigned long size)
         return NULL;
 
 
-    base = (unsigned long *)mmap((unsigned long *)phy_addr, size, 
-                    PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    base = (unsigned long *)mmap(0, size, PROT_READ | PROT_WRITE, 
+                                  MAP_SHARED, fd, (unsigned long *)phy_addr);
     if (!base) {
         close(fd);
         return NULL;
     }
 
+    close(fd);
     return base;
 }
 

@@ -7,31 +7,34 @@ struct node
     unsigned long index;
     unsigned long base;
     unsigned long size;
-    struct node *next;
+    unsigned long next;
 };
 
-struct head 
-{
-    struct node *front;
-    struct node *rear;
-};
-
-#define BASE_PHY_ADDR            (0x5000000)
-#define FIFO_BUFFER              (0x400)
+#define BASE_PHY_ADDR            (0x3000000)
+#define FIFO_BUFFER              (0x400000)
 #define NODE_NUM                 (256)
+#define PAGE_SHIFT               (12)
+#define PAGE_SIZE                (1 << PAGE_SHIFT)
+#define PAGE_MASK                (~(PAGE_SIZE - 1))
+#define PAGE_ALIGN(addr)         (((addr)+PAGE_SIZE-1)&PAGE_MASK)
 #define NODE_SIZES               ((NODE_NUM + 1) * sizeof(struct node))
 #define EFLAGS_BYTES             (4)
 #define MAGIC_BYTES              (4)
 #define HEAD_BYTES               (sizeof(struct head))
+#define FRONT_BYTES              (8)
+#define REAR_BYTES               (8)
+#define HEAD_BYTES               (FRONT_BYTES + REAR_BYTES)
 #define BITMAP_BYTES             ((NODE_NUM + 7) / 8)
 #define EFLAGS_OFFSET            (0)
 #define MAGIC_OFFSET             (EFLAGS_OFFSET + EFLAGS_BYTES)
 #define HEAD_OFFSET              (MAGIC_OFFSET + MAGIC_BYTES)
+#define HEAD_FRONT_OFFSET        (HEAD_OFFSET)
+#define HEAD_REAR_OFFSET         (HEAD_OFFSET + FRONT_BYTES)
 #define BITMAP_OFFSET            (HEAD_OFFSET + HEAD_BYTES)
 #define NODE_OFFSET              (BITMAP_OFFSET + BITMAP_BYTES)
 #define RESERVED_SIZES           (NODE_OFFSET + NODE_SIZES)
-#define MEM_OFFSET               (RESERVED_SIZES)
-#define TOTAL_SIZES              (FIFO_BUFFER + RESERVED_SIZES)
+#define MEM_OFFSET               (PAGE_ALIGN(RESERVED_SIZES))
+#define TOTAL_SIZES              (FIFO_BUFFER + MEM_OFFSET)
 #define MEM_SIZES                (FIFO_BUFFER)
 #define FIFO_MAGIC               0x91929400
 

@@ -30,6 +30,7 @@
 #include "tap.h"
 #include "fifo.h"
 #include "mem.h"
+#include "dma.h"
 
 static int tun_fd;
 
@@ -42,50 +43,88 @@ static unsigned char *mBuf;
 /* Reload fifo manage information */
 #define EFLAGS_BUSY            (1 << 0)
 #define EFLAGS_READ            (1 << 1)
+#define EFLAGS_WRITE           (1 << 2)
 
-static inline unsigned int fifo_lock(unsigned int *base)
+#define fifo_manage_get(base, offset) \
+    memcpy((unsigned char *)base + MAGIC_BYTES, (unsigned char *)mBuf + \
+                       offset + MAGIC_BYTES, RESERVED_SIZES)
+
+#define fifo_manage_sync(base, offset) \
+    memcpy((unsigned char *)mBuf + offset + MAGIC_BYTES, \
+             (unsigned char *)base + MAGIC_BYTES, RESERVED_SIZES)
+
+#define fifo_eflags_get(base, offset) \
+    memcpy(base, (unsigned char *)mBuf + offset + EFLAGS_OFFSET, EFLAGS_BYTES)
+
+#define fifo_eflags_put(base, offset) \
+    memcpy((unsigned char *)mBuf + offset + EFLAGS_OFFSET, base, EFLAGS_BYTES)
+
+static inline unsigned int fifo_lock(unsigned long offset)
 {
-    unsigned int eflags = *base;
+    unsigned int eflags;
+
+    fifo_eflags_get(&eflags, offset);
 
     eflags |= EFLAGS_BUSY;
 
-    *base = eflags;
+    fifo_eflags_put(&eflags, offset);
    
     return eflags;
 }
 
-static inline unsigned int fifo_unlock(unsigned int *base)
+static inline unsigned int fifo_unlock(unsigned int eflags,
+                                                  unsigned long offset)
 {
-    unsigned int eflags = *base;
-
     eflags &= ~EFLAGS_BUSY;
 
-    *base = eflags;
+    fifo_eflags_put(&eflags, offset);
 
     return eflags;
 }
 
-static inline int wait_lock(unsigned int *base)
+static inline int wait_lock(unsigned long offset)
 {
-    unsigned int eflags = *base;
+    unsigned int eflags;
 
     while (1) {
+        fifo_eflags_get(&eflags, offset);
         if ((eflags & EFLAGS_BUSY) != EFLAGS_BUSY)
             break;
     }
     return eflags;
 }
 
-static inline int wait_and_lock(unsigned int *base)
+static inline int wait_and_ready(unsigned long offset)
 {
-    unsigned int eflags = *base;
+    unsigned int eflags;
 
     while (1) {
+        fifo_eflags_get(&eflags, offset);
+
+        if ((eflags & EFLAGS_WRITE) != EFLAGS_WRITE)
+            continue;
+
         if ((eflags & EFLAGS_BUSY) != EFLAGS_BUSY)
             break;
     }
     eflags |= EFLAGS_BUSY;
-    *base = eflags;
+    fifo_eflags_put(&eflags, offset);
+
+    return eflags;
+}
+
+static inline int wait_and_lock(unsigned long offset)
+{
+    unsigned int eflags;
+
+    while (1) {
+        fifo_eflags_get(&eflags, offset);
+
+        if ((eflags & EFLAGS_BUSY) != EFLAGS_BUSY)
+            break;
+    }
+    eflags |= EFLAGS_BUSY;
+    fifo_eflags_put(&eflags, offset);
 
     return eflags;
 }
@@ -93,55 +132,75 @@ static inline int wait_and_lock(unsigned int *base)
 /* Send procedure */
 void *send_procedure(void *arg)
 {
+    unsigned int eflags = 0;
+    unsigned long total = 0;
+
     /*
      * Create Write buffer.
      */
-    WpBuf = malloc(FIFO_BUFFER);
+    WpBuf = align_alloc(FIFO_BUFFER);
     if (!WpBuf) {
         printf("ERROR: Unable to allocate memory from DMA.\n");
         return NULL;
     }
     memset(WpBuf, 0x00, FIFO_BUFFER);
 
-    Wbase = mBuf + ARM_WR_FIFO_OFFSET;
+    /* 
+     * FPGA initialize FIFO
+     */
+    Wbase = align_alloc(RESERVED_SIZES);
+    if (!Wbase)
+        return NULL;
+
+    fifo_manage_get(Wbase, ARM_WR_FIFO_OFFSET);
 
     /* FPGA initialize Write FIFO */
     fifo_init((unsigned long)Wbase);
+    fifo_eflags_put(&eflags, ARM_WR_FIFO_OFFSET);
     if (InitLinkQueue((unsigned long)Wbase) < 0) {
         printf("ERROR: Unable to init FIFO queue.\n");
         return NULL;
     }
 
+    /* sync */
+    fifo_manage_sync((unsigned long)Wbase, ARM_WR_FIFO_OFFSET);
+
     while (1) {
         unsigned long start, size, count;
-        unsigned int eflags;
 
         /* Read from Tun/Tap */
         count = read(tun_fd, WpBuf, 1200);
 
-        eflags = wait_and_lock((unsigned int *)Wbase);
+        /* Set Vnet-card Ready */
+        eflags = wait_and_lock(ARM_WR_FIFO_OFFSET);
+        fifo_manage_get(Wbase, ARM_WR_FIFO_OFFSET);
         if ((eflags & EFLAGS_READ) == EFLAGS_READ) {
             /* flush out all fifo */
             while (!IsQueueEmpty((unsigned long)Wbase))
                 PopElement((unsigned long)Wbase, &start, &size);
             /* Clear R bit */
             eflags &= ~EFLAGS_READ;
-            *(unsigned int *)Wbase = eflags;
         }
 
         /* Read fifo information */
         GetHeadElement((unsigned long)Wbase, &start, &size);
+        total += size;
 
         /* Over MEM buffer */
-        if ((start + size + count) > MEM_SIZES) {
-            memcpy((unsigned char *)Wbase + MEM_OFFSET, WpBuf, count);
+        if ((total + count) > MEM_SIZES) {
+            memcpy((unsigned char *)mBuf + MEM_OFFSET + ARM_WR_FIFO_OFFSET, 
+                                                   WpBuf, count);
             PushElement((unsigned long)Wbase, 0, count);
+            total = 0;
         } else {
-            memcpy((unsigned char *)Wbase + MEM_OFFSET + start + size, 
-                                            WpBuf, count);
-            PushElement((unsigned long)Wbase, start + size, count);
+            memcpy((unsigned char *)mBuf + MEM_OFFSET + ARM_WR_FIFO_OFFSET + 
+                         start + size, WpBuf, count);
+            PushElement((unsigned long)Wbase, total, count);
         }
-        eflags = fifo_unlock((unsigned int *)Wbase);
+
+        fifo_manage_sync(Wbase, ARM_WR_FIFO_OFFSET);
+        eflags |= EFLAGS_WRITE;
+        fifo_unlock(eflags, ARM_WR_FIFO_OFFSET);
     }
 
     return NULL;
@@ -150,8 +209,6 @@ void *send_procedure(void *arg)
 /* Rece procedure */
 void *recv_procedure(void *arg)
 {
-    unsigned int *magic;
-
     /*
      * Initialize DMA, create Write buffer.
      */
@@ -165,26 +222,33 @@ void *recv_procedure(void *arg)
     /*
      * X86 initialize FIFO.
      */
-    Rbase = mBuf + ARM_WR_FIFO_OFFSET;
+    Rbase = malloc(RESERVED_SIZES);
+    if (!Rbase)
+        return NULL;
 
     /* Read-monitor */
     while (1) {
+        unsigned int *magic;
         unsigned long base, size;
         unsigned int eflags;
 
-        sleep(1);
-        eflags = wait_and_lock((unsigned int *)Rbase);
+        eflags = wait_and_ready(ARM_WR_FIFO_OFFSET);
+        if ((eflags & EFLAGS_READ) == EFLAGS_READ) {
+            /* No write data! */
+            fifo_unlock(eflags, ARM_WR_FIFO_OFFSET);
+            usleep(2000);
+            continue;
+        }
         /* Set R bit */
         eflags |= EFLAGS_READ;
-        *(unsigned int *)Rbase = eflags;
-        fifo_unlock((unsigned int *)Rbase);
-
+        eflags &= ~EFLAGS_WRITE;
+        /* Obtain newest read-fifo information */
+        fifo_manage_get(Rbase, ARM_WR_FIFO_OFFSET);
+        fifo_unlock(eflags, ARM_WR_FIFO_OFFSET);
         magic = (unsigned int *)(Rbase + MAGIC_OFFSET);
-        while (1) {
-            if ((unsigned int)*magic == FIFO_MAGIC)
-                break;
-            sleep(1);
-        }
+
+        if (*magic != FIFO_MAGIC)
+            continue;
 
         if (IsQueueEmpty((unsigned long)Rbase))
             continue;
@@ -195,8 +259,9 @@ void *recv_procedure(void *arg)
 
             PopElement((unsigned long)Rbase, &base, &size);
 
-            memcpy(RpBuf, (unsigned char *)Rbase + MEM_OFFSET + base, size);
-
+            memcpy(RpBuf, (unsigned char *)mBuf + MEM_OFFSET + 
+                                    ARM_WR_FIFO_OFFSET + base, size);
+            
             memcpy(ip, &RpBuf[12], 4);
             memcpy(&RpBuf[12], &RpBuf[16], 4);
             memcpy(&RpBuf[16], ip, 4);
@@ -206,43 +271,10 @@ void *recv_procedure(void *arg)
             *((unsigned short *)&RpBuf[22]) += 8;
             write(tun_fd, RpBuf, size);
         }
+        /* Only*/
     }
 
     return NULL;
-}
-
-/* Handle signal from system */
-static do_signal(int sig)
-{
-    switch (sig) {
-    case SIGSTOP:
-        /* CTRL Z */
-    case SIGINT:
-        /* CTRL C */
-    case SIGQUIT:
-        /* CTRL \ */
-    case SIGTERM:
-        /* Termnal */
-    case SIGKILL:
-        /* Kill -9 */
-        
-        printf("Un-normal-exit.\n");
-        exit (1);
-        break;
-    default:
-        fprintf(stderr, "Undefined signal.\n");
-        exit (1);
-    }
-}
-
-/* Initialize all signal */
-void signal_init(void)
-{
-    signal(SIGSTOP, do_signal);
-    signal(SIGINT,  do_signal);
-    signal(SIGQUIT, do_signal);
-    signal(SIGKILL, do_signal);
-    signal(SIGTERM, do_signal);
 }
 
 int main(int argc, char *argv[])
@@ -259,9 +291,6 @@ int main(int argc, char *argv[])
     if (tun_fd < 0) {
         return -1;
     }
-
-    /* Initialize signation */
-    //signal_init();
 
     if (!(mBuf = mem_init(BASE_PHY_ADDR, TOTAL_SIZES * 2))) {
         printf("ERROR: Unable allocate memory to PHY\n");
