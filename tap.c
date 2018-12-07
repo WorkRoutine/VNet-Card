@@ -72,7 +72,6 @@ static int set_ipaddr(char *interface_name, char *ip)
 static int netmask_set(char *interface_name, char *netmask)
 {
     int sock_netmask;
-    char netmask_addr[32];
     struct ifreq ifr_mask;
     struct sockaddr_in *sin_net_mask;
 

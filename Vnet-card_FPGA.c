@@ -230,10 +230,10 @@ void *recv_procedure(void *arg)
         unsigned long base, size;
         unsigned int eflags;
 
-        eflags = wait_and_ready(ARM_WR_FIFO_OFFSET);
+        eflags = wait_and_ready(ARM_RD_FIFO_OFFSET);
         if ((eflags & EFLAGS_READ) == EFLAGS_READ) {
             /* No write data! */
-            fifo_unlock(eflags, ARM_WR_FIFO_OFFSET);
+            fifo_unlock(eflags, ARM_RD_FIFO_OFFSET);
             usleep(2000);
             continue;
         }
@@ -241,8 +241,8 @@ void *recv_procedure(void *arg)
         eflags |= EFLAGS_READ;
         eflags &= ~EFLAGS_WRITE;
         /* Obtain newest read-fifo information */
-        fifo_manage_get(Rbase, ARM_WR_FIFO_OFFSET);
-        fifo_unlock(eflags, ARM_WR_FIFO_OFFSET);
+        fifo_manage_get(Rbase, ARM_RD_FIFO_OFFSET);
+        fifo_unlock(eflags, ARM_RD_FIFO_OFFSET);
         magic = (unsigned int *)(Rbase + MAGIC_OFFSET);
 
         if (*magic != FIFO_MAGIC) 
@@ -253,20 +253,11 @@ void *recv_procedure(void *arg)
 
         /* Read from FIFO */
         while (!IsQueueEmpty((unsigned long)Rbase)) {
-            unsigned char ip[4];
-
             PopElement((unsigned long)Rbase, &base, &size);
 
             memcpy(RpBuf, (unsigned char *)mBuf + MEM_OFFSET + 
-                                    ARM_WR_FIFO_OFFSET + base, size);
+                                    ARM_RD_FIFO_OFFSET + base, size);
             
-            memcpy(ip, &RpBuf[12], 4);
-            memcpy(&RpBuf[12], &RpBuf[16], 4);
-            memcpy(&RpBuf[16], ip, 4);
-
-            RpBuf[20] = 0;
-
-            *((unsigned short *)&RpBuf[22]) += 8;
             write(tun_fd, RpBuf, size);
         }
     }

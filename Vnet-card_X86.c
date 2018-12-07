@@ -45,32 +45,18 @@ static unsigned char *RpBuf;
 #define EFLAGS_WRITE           (1 << 2)
 
 #define fifo_manage_get(base, offset) \
-    if (xdma_read((uint8_t *)base + MAGIC_BYTES, RESERVED_SIZES, \
-                      offset + MAGIC_BYTES, hdl)) { \
-        printf("ERROR: XDMA Read!\n"); \
-    }
-
-#define fifo_manage_reload(base, offset) \
-    if (xdma_read((uint8_t *)base, RESERVED_SIZES, offset, hdl)) { \
-        printf("ERROR: XDMA Read!\n"); \
-    } \
-    reload_fifo((unsigned long)base);
+    xdma_read((uint8_t *)base + MAGIC_BYTES, RESERVED_SIZES, \
+                      offset + MAGIC_BYTES, hdl)
 
 #define fifo_manage_sync(base, offset) \
-    if (xdma_write((uint8_t *)base + MAGIC_BYTES, RESERVED_SIZES, \
-                     offset + MAGIC_BYTES, hdl)) { \
-        printf("ERROR: XDMA write!\n"); \
-    }
+    xdma_write((uint8_t *)base + MAGIC_BYTES, RESERVED_SIZES, \
+                     offset + MAGIC_BYTES, hdl)
 
 #define fifo_eflags_get(base, offset) \
-    if (xdma_read((uint8_t *)base, EFLAGS_BYTES, offset + EFLAGS_OFFSET, hdl)) { \
-        printf("ERROR: XDMA Read!\n"); \
-    }
+    xdma_read((uint8_t *)base, EFLAGS_BYTES, offset + EFLAGS_OFFSET, hdl)
 
 #define fifo_eflags_put(base, offset) \
-    if (xdma_write((uint8_t *)base, EFLAGS_BYTES, offset + EFLAGS_OFFSET, hdl)) { \
-        printf("ERROR: XDMA Write!\n"); \
-    }
+    xdma_write((uint8_t *)base, EFLAGS_BYTES, offset + EFLAGS_OFFSET, hdl)
     
 static inline unsigned int fifo_lock(unsigned long offset)
 {
@@ -239,10 +225,10 @@ void *recv_procedure(void *arg)
         unsigned long base, size;
         unsigned int eflags;
 
-        eflags = wait_and_ready(X86_WR_FIFO_OFFSET);
+        eflags = wait_and_ready(X86_RD_FIFO_OFFSET);
         if ((eflags & EFLAGS_READ) == EFLAGS_READ) {
             /* No write data! */
-            fifo_unlock(eflags, X86_WR_FIFO_OFFSET);
+            fifo_unlock(eflags, X86_RD_FIFO_OFFSET);
             usleep(2000);
             continue;
         }
@@ -250,8 +236,8 @@ void *recv_procedure(void *arg)
         eflags |= EFLAGS_READ;
         eflags &= ~EFLAGS_WRITE;
         /* Obtian newest read-fifo information */
-        fifo_manage_get(Rbase, X86_WR_FIFO_OFFSET);
-        fifo_unlock(eflags, X86_WR_FIFO_OFFSET);
+        fifo_manage_get(Rbase, X86_RD_FIFO_OFFSET);
+        fifo_unlock(eflags, X86_RD_FIFO_OFFSET);
         magic = (unsigned int *)(Rbase + MAGIC_OFFSET);
 
         if (*magic != FIFO_MAGIC) 
@@ -262,19 +248,10 @@ void *recv_procedure(void *arg)
 
         /* Read from FIFO */
         while (!IsQueueEmpty((unsigned long)Rbase)) {
-            unsigned char ip[4];
-
             PopElement((unsigned long)Rbase, &base, &size);
 
-            xdma_read(RpBuf, size, X86_WR_FIFO_OFFSET + MEM_OFFSET + base, hdl);
+            xdma_read(RpBuf, size, X86_RD_FIFO_OFFSET + MEM_OFFSET + base, hdl);
 
-            memcpy(ip, &RpBuf[12], 4);
-            memcpy(&RpBuf[12], &RpBuf[16], 4);
-            memcpy(&RpBuf[16], ip, 4);
-
-            RpBuf[20] = 0;
-
-            *((unsigned short *)&RpBuf[22]) += 8;
             write(tun_fd, RpBuf, size);
         }
     }
