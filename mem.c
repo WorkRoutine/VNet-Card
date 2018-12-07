@@ -27,7 +27,7 @@ unsigned long *mem_init(unsigned long phy_addr, unsigned long size)
 
 
     base = (unsigned long *)mmap(0, size, PROT_READ | PROT_WRITE, 
-                                  MAP_SHARED, fd, (unsigned long *)phy_addr);
+                                  MAP_SHARED, fd, (off_t)phy_addr);
     if (!base) {
         close(fd);
         return NULL;

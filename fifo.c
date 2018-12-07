@@ -72,8 +72,8 @@ int fifo_init(unsigned long base)
     memset((unsigned long *)base, 0, RESERVED_SIZES);
     fifo_magic = (unsigned int *)(base + MAGIC_OFFSET);
     *fifo_magic = FIFO_MAGIC;
-    front = (unsigned int *)(base + HEAD_FRONT_OFFSET);
-    rear = (unsigned int *)(base + HEAD_REAR_OFFSET);
+    front = (unsigned long *)(base + HEAD_FRONT_OFFSET);
+    rear = (unsigned long *)(base + HEAD_REAR_OFFSET);
     *front = NODE_NUM; /* NODE_NUM is NULL */
     *rear =  NODE_NUM; /* NODE_NUM is NULL */
 
@@ -120,8 +120,8 @@ static void free_node(unsigned long base, struct node *node)
 int InitLinkQueue(unsigned long base)
 {
     struct node *p;
-    unsigned long *front = (unsigned int *)(base + HEAD_FRONT_OFFSET);
-    unsigned long *rear  = (unsigned int *)(base + HEAD_REAR_OFFSET);
+    unsigned long *front = (unsigned long *)(base + HEAD_FRONT_OFFSET);
+    unsigned long *rear  = (unsigned long *)(base + HEAD_REAR_OFFSET);
 
     p = alloc_node(base);
     if (p == NULL)
@@ -141,8 +141,8 @@ int InitLinkQueue(unsigned long base)
  */
 int IsQueueEmpty(unsigned long base)
 {
-    unsigned long *front = (unsigned int *)(base + HEAD_FRONT_OFFSET);
-    unsigned long *rear  = (unsigned int *)(base + HEAD_REAR_OFFSET);
+    unsigned long *front = (unsigned long *)(base + HEAD_FRONT_OFFSET);
+    unsigned long *rear  = (unsigned long *)(base + HEAD_REAR_OFFSET);
 
     if (*front == *rear)
         return 1;
@@ -158,8 +158,7 @@ int PushElement(unsigned long begin, unsigned long base, unsigned long size)
     struct node *p;
     struct node *node;
     struct node *node_list = (struct node *)(begin + NODE_OFFSET);
-    unsigned long *front = (unsigned int *)(begin + HEAD_FRONT_OFFSET);
-    unsigned long *rear  = (unsigned int *)(begin + HEAD_REAR_OFFSET);
+    unsigned long *rear  = (unsigned long *)(begin + HEAD_REAR_OFFSET);
 
     p = alloc_node(begin);
     if (p == NULL)
@@ -184,8 +183,8 @@ int PopElement(unsigned long base, unsigned long *pbase, unsigned long *psize)
     struct node *p;
     struct node *node;
     struct node *node_list = (struct node *)(base + NODE_OFFSET);
-    unsigned long *front = (unsigned int *)(base + HEAD_FRONT_OFFSET);
-    unsigned long *rear  = (unsigned int *)(base + HEAD_REAR_OFFSET);
+    unsigned long *front = (unsigned long *)(base + HEAD_FRONT_OFFSET);
+    unsigned long *rear  = (unsigned long *)(base + HEAD_REAR_OFFSET);
 
     if (IsQueueEmpty((unsigned long)base))
         return -1;
@@ -210,8 +209,7 @@ int GetHeadElement(unsigned long base, unsigned long *pbase,
                                               unsigned long *psize)
 {
     struct node *node_list = (struct node *)(base + NODE_OFFSET);
-    unsigned long *front = (unsigned int *)(base + HEAD_FRONT_OFFSET);
-    unsigned long *rear  = (unsigned int *)(base + HEAD_REAR_OFFSET);
+    unsigned long *rear  = (unsigned long *)(base + HEAD_REAR_OFFSET);
     struct node *node;
 
     if (IsQueueEmpty(base)) {
@@ -227,48 +225,3 @@ int GetHeadElement(unsigned long base, unsigned long *pbase,
 
     return 0;
 }
-
-#if 0
-int main(void)
-{
-    char *p;
-    int i;
-
-    p = malloc(4096);
-
-    printf("Initialize.....\n");
-    fifo_init((unsigned long)p);
-
-    /* Initialize FIFO queue */
-    if(InitLinkQueue() < 0) {
-        printf("Failed to init FIFO.\n");
-        return -1;
-    }
-
-    for (i = 0; i < 20; i++) {
-        unsigned long base, size;
-
-        GetHeadElement(&base, &size);
-        printf("=>Base: %d Size: %d\n", base, size);
-        if (PushElement(base + size, 100) < 0) {
-            printf("Unable push data into FIFO.\n");
-            return -1;
-        }
-    }
-
-    while (!IsQueueEmpty()) {
-        unsigned long base, size;
-
-        PopElement(&base, &size);
-        printf("Base: %d Size: %d\n", base, size);
-        GetHeadElement(&base, &size);
-        printf(">>Base: %d Size: %d\n", base, size);
-    }
-    
-
-    printf("Hello World\n");
-
-
-    return 0;
-}
-#endif

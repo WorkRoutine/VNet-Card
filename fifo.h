@@ -20,7 +20,6 @@ struct node
 #define NODE_SIZES               ((NODE_NUM + 1) * sizeof(struct node))
 #define EFLAGS_BYTES             (4)
 #define MAGIC_BYTES              (4)
-#define HEAD_BYTES               (sizeof(struct head))
 #define FRONT_BYTES              (8)
 #define REAR_BYTES               (8)
 #define HEAD_BYTES               (FRONT_BYTES + REAR_BYTES)

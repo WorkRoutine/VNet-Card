@@ -42,9 +42,11 @@ static unsigned char *RpBuf;
 /* Reload fifo manage information */
 #define EFLAGS_BUSY            (1 << 0)
 #define EFLAGS_READ            (1 << 1)
+#define EFLAGS_WRITE           (1 << 2)
 
 #define fifo_manage_get(base, offset) \
-    if (xdma_read((uint8_t *)base, RESERVED_SIZES, offset, hdl)) { \
+    if (xdma_read((uint8_t *)base + MAGIC_BYTES, RESERVED_SIZES, \
+                      offset + MAGIC_BYTES, hdl)) { \
         printf("ERROR: XDMA Read!\n"); \
     }
 
@@ -55,7 +57,8 @@ static unsigned char *RpBuf;
     reload_fifo((unsigned long)base);
 
 #define fifo_manage_sync(base, offset) \
-    if (xdma_write((uint8_t *)base, RESERVED_SIZES, offset, hdl)) { \
+    if (xdma_write((uint8_t *)base + MAGIC_BYTES, RESERVED_SIZES, \
+                     offset + MAGIC_BYTES, hdl)) { \
         printf("ERROR: XDMA write!\n"); \
     }
 
@@ -82,12 +85,9 @@ static inline unsigned int fifo_lock(unsigned long offset)
     return eflags;
 }
 
-static inline unsigned int fifo_unlock(unsigned long offset)
+static inline unsigned int fifo_unlock(unsigned int eflags,
+                                               unsigned long offset)
 {
-    unsigned int eflags;
-
-    fifo_eflags_get(&eflags, offset);
-
     eflags &= ~EFLAGS_BUSY;
 
     fifo_eflags_put(&eflags, offset);
@@ -105,6 +105,25 @@ static inline int wait_lock(unsigned long offset)
         if ((eflags & EFLAGS_BUSY) != EFLAGS_BUSY)
             break;
     }
+    return eflags;
+}
+
+static inline int wait_and_ready(unsigned long offset)
+{
+    unsigned int eflags;
+
+    while (1) {
+        fifo_eflags_get(&eflags, offset);
+
+        if ((eflags & EFLAGS_WRITE) != EFLAGS_WRITE)
+            continue;
+
+        if ((eflags & EFLAGS_BUSY) != EFLAGS_BUSY)
+            break;
+    }
+    eflags |= EFLAGS_BUSY;
+    fifo_eflags_put(&eflags, offset);
+
     return eflags;
 }
 
@@ -126,6 +145,9 @@ static inline int wait_and_lock(unsigned long offset)
 /* Send procedure */
 void *send_procedure(void *arg)
 {
+    unsigned int eflags = 0;
+    unsigned long total = 0;
+
     /*
      * Initialize DMA, create Write buffer.
      */
@@ -147,6 +169,7 @@ void *send_procedure(void *arg)
 
     /* X86 initialize DMA-Write FIFO */
     fifo_init((unsigned long)Wbase);
+    fifo_eflags_put(&eflags, X86_WR_FIFO_OFFSET);
     if (InitLinkQueue((unsigned long)Wbase) < 0) {
         printf("ERROR: Unable to init FIFO queue.\n");
         return NULL;
@@ -169,23 +192,22 @@ void *send_procedure(void *arg)
                 PopElement((unsigned long)Wbase, &start, &size);
             /* Clear R bit */
             eflags &= ~EFLAGS_READ;
-            fifo_eflags_put(&eflags, X86_WR_FIFO_OFFSET);
         }
-
-        /* Read fifo information */
-        GetHeadElement((unsigned long)Wbase, &start, &size);
 
         /* Over MEM buffer */
-        if ((start + size + count) > MEM_SIZES) {
+        if ((total + count) > MEM_SIZES) {
             xdma_write(WpBuf, count, X86_WR_FIFO_OFFSET + MEM_OFFSET, hdl);
             PushElement((unsigned long)Wbase, 0, count);
+            total = 0;
         } else {
             xdma_write(WpBuf, count,
-                 X86_WR_FIFO_OFFSET + MEM_OFFSET + start + size, hdl);
-            PushElement((unsigned long)Wbase, start + size, count);
+                 X86_WR_FIFO_OFFSET + MEM_OFFSET + total, hdl);
+            PushElement((unsigned long)Wbase, total, count);
         }
         fifo_manage_sync(Wbase, X86_WR_FIFO_OFFSET);
-        eflags = fifo_unlock(X86_WR_FIFO_OFFSET);
+        total += count;
+        eflags |= EFLAGS_WRITE;
+        fifo_unlock(eflags, X86_WR_FIFO_OFFSET);
     }
 
     return NULL;
@@ -217,14 +239,19 @@ void *recv_procedure(void *arg)
         unsigned long base, size;
         unsigned int eflags;
 
-        sleep(1);
-        eflags = wait_and_lock(X86_WR_FIFO_OFFSET);
+        eflags = wait_and_ready(X86_WR_FIFO_OFFSET);
+        if ((eflags & EFLAGS_READ) == EFLAGS_READ) {
+            /* No write data! */
+            fifo_unlock(eflags, X86_WR_FIFO_OFFSET);
+            usleep(2000);
+            continue;
+        }
         /* Set R bit */
         eflags |= EFLAGS_READ;
-        fifo_eflags_put(&eflags, X86_WR_FIFO_OFFSET);
+        eflags &= ~EFLAGS_WRITE;
         /* Obtian newest read-fifo information */
         fifo_manage_get(Rbase, X86_WR_FIFO_OFFSET);
-        fifo_unlock(X86_WR_FIFO_OFFSET);
+        fifo_unlock(eflags, X86_WR_FIFO_OFFSET);
         magic = (unsigned int *)(Rbase + MAGIC_OFFSET);
 
         if (*magic != FIFO_MAGIC) 
@@ -255,46 +282,6 @@ void *recv_procedure(void *arg)
     return NULL;
 }
 
-/* Handle signal from system */
-static do_signal(int sig)
-{
-    switch (sig) {
-    case SIGSTOP:
-        /* CTRL Z */
-    case SIGINT:
-        /* CTRL C */
-    case SIGQUIT:
-        /* CTRL \ */
-    case SIGTERM:
-        /* Termnal */
-    case SIGKILL:
-        /* Kill -9 */
-        /* Release READ/Write Manage */
-        fifo_release((unsigned long)Wbase);
-        fifo_manage_sync((unsigned long)Wbase, X86_WR_FIFO_OFFSET);
-        free(Wbase);
-        free(WpBuf);
-        free(Rbase);
-        free(RpBuf);
-        printf("Un-normal-exit.\n");
-        exit (1);
-        break;
-    default:
-        fprintf(stderr, "Undefined signal.\n");
-        exit (1);
-    }
-}
-
-/* Initialize all signal */
-void signal_init(void)
-{
-    signal(SIGSTOP, do_signal);
-    signal(SIGINT,  do_signal);
-    signal(SIGQUIT, do_signal);
-    signal(SIGKILL, do_signal);
-    signal(SIGTERM, do_signal);
-}
-
 int main(int argc, char *argv[])
 {
     char tun_name[IFNAMSIZ];
@@ -316,9 +303,6 @@ int main(int argc, char *argv[])
         printf("ERROR: Unable to open DMA Channel!\n");
         return -1;
     }
-
-    /* Initialize signation */
-    signal_init();
 
     /*
      * Establish two thread to send and receive data.

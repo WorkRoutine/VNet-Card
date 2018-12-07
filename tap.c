@@ -134,7 +134,7 @@ int tun_create(char *dev, int flags, char *ip)
     /* Set up route table */
     route_add(dev);
     /* Set up ip */
-//    set_ipaddr(dev, ip);
+    set_ipaddr(dev, ip);
 
     return fd;
 }
