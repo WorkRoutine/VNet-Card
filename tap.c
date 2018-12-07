@@ -69,6 +69,29 @@ static int set_ipaddr(char *interface_name, char *ip)
     return 0;
 }
  
+static int netmask_set(char *interface_name, char *netmask)
+{
+    int sock_netmask;
+    char netmask_addr[32];
+    struct ifreq ifr_mask;
+    struct sockaddr_in *sin_net_mask;
+
+    sock_netmask = socket(AF_INET, SOCK_STREAM, 0);
+    if( sock_netmask == -1)
+        return -1;
+
+    memset(&ifr_mask, 0, sizeof(ifr_mask));
+    strncpy(ifr_mask.ifr_name, interface_name, sizeof(ifr_mask.ifr_name) -1);
+    sin_net_mask = (struct sockaddr_in *)&ifr_mask.ifr_addr;
+    sin_net_mask->sin_family = AF_INET;
+    inet_pton(AF_INET, netmask, &sin_net_mask->sin_addr);
+
+    if(ioctl(sock_netmask, SIOCSIFNETMASK, &ifr_mask) < 0)    
+        return -1;   
+
+    return 0;
+}
+
 static int route_add(char *interface_name)
 {
     int skfd;
@@ -135,6 +158,9 @@ int tun_create(char *dev, int flags, char *ip)
     route_add(dev);
     /* Set up ip */
     set_ipaddr(dev, ip);
+
+    /* Set netmask */
+    netmask_set(dev, "255.255.255.0");
 
     return fd;
 }
