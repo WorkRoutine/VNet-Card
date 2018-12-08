@@ -168,7 +168,7 @@ void *send_procedure(void *arg)
         unsigned int eflags;
 
         /* Read from Tun/Tap */
-        count = read(tun_fd, WpBuf, 1200);
+        count = read(tun_fd, WpBuf, FIFO_BUFFER);
 
         eflags = wait_and_lock(X86_WR_FIFO_OFFSET);
         fifo_manage_get(Wbase, X86_WR_FIFO_OFFSET);

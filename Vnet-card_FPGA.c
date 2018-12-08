@@ -170,7 +170,7 @@ void *send_procedure(void *arg)
         unsigned int eflags;
 
         /* Read from Tun/Tap */
-        count = read(tun_fd, WpBuf, 1200);
+        count = read(tun_fd, WpBuf, FIFO_BUFFER);
 
         /* Set Vnet-card Ready */
         eflags = wait_and_lock(ARM_WR_FIFO_OFFSET);
