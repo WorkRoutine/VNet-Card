@@ -1,4 +1,21 @@
 VNet-Card
 --------------------------------------------
 
-![Alt text](https://github.com/EmulateSpace/PictureSet/blob/master/BiscuitOS/kernel/NET000002.png)
+## Queue test
+
+```
+make CROSS_CC=*/aarch64-linux-gnu-gcc
+scp Vnet_FPGA root@172.x.x.x:/tmp
+```
+
+##### Running on Host
+
+```
+sudo ./Vnet_Host
+```
+
+##### Running on FPGA
+
+```
+sudo ./Vnet_FPGA
+```

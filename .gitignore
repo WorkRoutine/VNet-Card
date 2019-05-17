@@ -1,4 +1,4 @@
-Vnet-card_X86
-Vnet-card_FPGA
+Vnet_FPGA
+Vnet_Host
 *.o
 *.swp

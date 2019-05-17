@@ -1,18 +1,26 @@
-MYCFLAGS = -g -O0 -Wall -fno-strict-aliasing -I./ -lpthread
 
-all: Vnet-card_X86 Vnet-card_FPGA
+HOST_CC=gcc
+CROSS_CC=/xspace/OpenSource/BiscuitOS/BiscuitOS/output/linux-newest-arm64/aarch64-linux-gnu/aarch64-linux-gnu/bin/aarch64-linux-gnu-gcc
 
-%.o: %.c
-	$(CC) -c -o $@ $< $(MYCFLAGS)
+## CFLAGS
+CFLAGS += -I./ -lpthread
 
-Vnet-card_X86: tap.o dma.o Vnet-card_X86.o fifo.o
-	@rm -f $@
-	$(CC) $^ -o $@ $(MYCFLAGS) $(MYLDFLAGS)
+CONFIG_ALL :=
+SRC := main.c base.c signal.c
 
-Vnet-card_FPGA: tap.o dma.o Vnet-card_FPGA.o fifo.o mem.o
-	@rm -f $@
-	$(CC) $^ -o $@ $(MYCFLAGS) $(MYLDFLAGS)
+# CONFIG_DMA_QUEUE
+# 
+SRC        += queue.c tap_tun.c 
+
+# CONFIG_
+
+all: Vnet_Host Vnet_FPGA
+
+Vnet_Host: $(SRC)
+	@$(HOST_CC) $(SRC) $(CFLAGS) -DCONFIG_HOST $(CONFIG_ALL) -o $@
+
+Vnet_FPGA: $(SRC)
+	@$(CROSS_CC) $(SRC) $(CFLAGS) -DCONFIG_FPGA $(CONFIG_ALL) -o $@
 
 clean:
-	$(RM) *.o Vnet-card_X86 Vnet-card_FPGA
-
+	@rm -rf Vnet_*
