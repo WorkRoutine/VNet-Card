@@ -1,10 +1,10 @@
 VNet-Card
 --------------------------------------------
 
-## Queue test
+## Usage
 
 ```
-make CROSS_CC=*/aarch64-linux-gnu-gcc
+make CROSS_CC=$CC
 scp Vnet_FPGA root@172.x.x.x:/tmp
 ```
 

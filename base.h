@@ -3,7 +3,7 @@
 
 #include <queue.h>
 
-#define BUFFER_SIZE	0x10000
+#define BUFFER_SIZE	0x40000
 
 /* virtual card node */
 struct vc_node {

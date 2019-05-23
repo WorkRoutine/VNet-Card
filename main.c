@@ -1,7 +1,7 @@
 /*
- * Virtual-NetCare.
+ * Virtual net card.
  *
- * (C) 2019.05.14 <buddy.zhang@auperastor.com>
+ * (C) 2019.05.14 <buddy.zhang@aliyun.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -31,15 +31,20 @@
 void *send_procedure(void *arg)
 {
 	struct vc_node *vc = (struct vc_node *)arg;	
+	int ret;
 
 	while (1) {
 		unsigned long count;	
+		char *tmp;
+		int i, j = 0;
 	
-		printf("Send...\n");
 		/* Read from Tun/Tap */
-		count = read(vc->tun_fd, vc->WBuf, BUFFER_SIZE);
-
-		queue_write(vc->queue, vc->WBuf, count);
+		count = read(vc->tun_fd, (char *)vc->WBuf, BUFFER_SIZE);
+		ret = queue_write(vc->queue, vc->WBuf, count);
+		while (ret == -EAGAIN) {
+			sleep(1); /* need optimization */
+			ret = queue_write(vc->queue, vc->WBuf, count);
+		}
 	}
 }
 
@@ -47,15 +52,35 @@ void *send_procedure(void *arg)
 void *recv_procedure(void *arg)
 {
 	struct vc_node *vc = (struct vc_node *)arg;
+	int ret;
 
 	while (1) {
 		unsigned long count;
 
-		sleep (1);
-		if ((count = queue_read(vc->queue, vc->RBuf)) > 0) {
+		count = queue_read(vc->queue, vc->RBuf);
+
+		if (count > 0) {
+			unsigned long retry_num = count;
+			unsigned long finish_num = 0;
+
 			/* Receive data */
-			printf("Recv...\n");
-			write(vc->tun_fd, vc->RBuf, count);
+			ret = write(vc->tun_fd, (char *)vc->RBuf, count);
+			while (retry_num) {
+				if (ret < 0) {
+					sleep(1); /* retry tap/tun */
+				} else {
+					retry_num  -= ret;
+					finish_num += ret;
+				}
+				if (!retry_num)
+					break;
+		
+				ret = write(vc->tun_fd, (char *)vc->RBuf + 
+						finish_num, retry_num);
+			}
+		} else {
+			/* no data */
+			sleep(1);
 		}
 	}
 }

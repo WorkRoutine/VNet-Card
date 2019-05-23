@@ -17,6 +17,11 @@
 #define QUEUE_SIZE	0x2000
 #define QUEUE_MASK	(QUEUE_SIZE - 1)
 
+#define DATA_FULL	0xEF
+#define DATA_HALF	0xDF
+#define FRAME_FIRST	0xAF
+#define FRAME_END	0xBF
+
 
 struct queue_node {
 	const char *name;
@@ -38,12 +43,12 @@ static inline void queue_reg_write(uint64_t reg, uint32_t data)
 	*(uint32_t *)(reg) = data;
 }
 
-static inline uint8_t queue_data_read(struct queue_node *node)
+static inline uint32_t queue_data_read(struct queue_node *node)
 {
 	return queue_reg_read(node->Rqueue + QUE_DATA);
 }
 
-static inline void queue_data_write(struct queue_node *node, uint8_t data)
+static inline void queue_data_write(struct queue_node *node, uint32_t data)
 {
 	queue_reg_write(node->Wqueue + QUE_DATA, data);
 }
@@ -51,6 +56,11 @@ static inline void queue_data_write(struct queue_node *node, uint8_t data)
 static inline int queue_flag_read(unsigned long base)
 {
 	return queue_reg_read(base + QUE_FLAG);
+}
+
+static inline int queueW_cnt_get(struct queue_node *node)
+{
+	return queue_reg_read(node->Wqueue + QUE_WR_CNT) &QUEUE_MASK;
 }
 
 static inline int queue_cnt_read(unsigned long base)
@@ -76,7 +86,6 @@ static inline int queue_read_lock(unsigned long base)
 #define queueR_flag_get(node)	queue_flag_read(node->Rqueue)
 #define queueW_flag_get(node)	queue_flag_read(node->Wqueue)
 #define queueR_cnt_get(node)	queue_cnt_read(node->Rqueue)
-#define queueW_cnt_get(node)	queue_cnt_read(node->Wqueue)
 #define queueR_lock(node)	queue_lock(node->Rqueue)
 #define queueW_lock(node)	queue_lock(node->Wqueue)
 #define queueR_unlock(node)	queue_unlock(node->Rqueue)
@@ -93,5 +102,7 @@ extern struct queue_node *queue_init(void);
 extern void queue_exit(struct queue_node *node);
 extern int queue_write(struct queue_node *node, const char *buf, int count);
 extern int queue_read(struct queue_node *node, char *buf);
+extern int queue_write_test(struct queue_node *node);
+extern int queue_read_test(struct queue_node *node);
 
 #endif

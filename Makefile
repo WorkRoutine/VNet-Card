@@ -1,11 +1,12 @@
 
 HOST_CC=gcc
+CROSS_CC=
 CROSS_CC=/xspace/OpenSource/BiscuitOS/BiscuitOS/output/linux-newest-arm64/aarch64-linux-gnu/aarch64-linux-gnu/bin/aarch64-linux-gnu-gcc
 
 ## CFLAGS
 CFLAGS += -I./ -lpthread
 
-CONFIG_ALL :=
+CONFIG_ALL := -DCONFIG_PERF_TEST
 SRC := main.c base.c signal.c
 
 # CONFIG_DMA_QUEUE

@@ -1,7 +1,7 @@
 /*
- * TAP/TUN.
+ * Tun-Tap.
  *
- * (C) 2019.05.14 <buddy.zhang@auperastor.com>
+ * (C) 2019.05.14 <buddy.zhang@aliyun.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
