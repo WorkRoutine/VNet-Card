@@ -135,7 +135,7 @@ int tun_create(char *dev, int flags, char *ip)
 	struct ifreq ifr;
 	int fd, err;
 
-	if ((fd = open("/dev/net/tun", O_RDWR)) < 0) {
+	if ((fd = open("/dev/net/tun", O_RDWR | O_NONBLOCK)) < 0) {
 		printf("Error :%d\n", errno);
 		return -1;
 	}

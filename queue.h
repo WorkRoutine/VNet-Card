@@ -17,11 +17,16 @@
 #define QUEUE_SIZE	0x2000
 #define QUEUE_MASK	(QUEUE_SIZE - 1)
 
-#define DATA_FULL	0xEF
-#define DATA_HALF	0xDF
-#define FRAME_FIRST	0xAF
-#define FRAME_END	0xBF
-
+#define QUEUE_RESERVED  0x10
+#ifdef CONFIG_QUEUE_64B
+#define QUEUE_WIDTH	0x8
+#define QUEUE_HEAD_MAGIC	0xEFABCD22ABCDDEEF
+typedef uint64_t	queue_t;
+#else
+#define QUEUE_WIDTH	0x4
+#define QUEUE_HEAD_MAGIC	0xFEDCAB78
+typedef uint32_t	queue_t;
+#endif
 
 struct queue_node {
 	const char *name;
@@ -32,6 +37,21 @@ struct queue_node {
 	unsigned long Rqueue; /* Read Queue virtual address */
 	unsigned long Wqueue; /* Write Queue virtual address */
 };
+
+struct queue_head {
+	uint64_t msg_head;
+	uint64_t length;
+};
+
+static inline uint64_t queue_reg_read_64b(uint64_t reg)
+{
+        return *(uint64_t *)(reg);
+}
+
+static inline uint64_t queue_data_read_64b(struct queue_node *node)
+{
+        return queue_reg_read_64b(node->Rqueue + QUE_DATA);
+}
 
 static inline uint32_t queue_reg_read(uint64_t reg)
 {
@@ -100,9 +120,7 @@ static inline void queue_clear(struct queue_node *node)
 
 extern struct queue_node *queue_init(void);
 extern void queue_exit(struct queue_node *node);
-extern int queue_write(struct queue_node *node, const char *buf, int count);
+extern int queue_write(struct queue_node *node, const unsigned char *buf, int count);
 extern int queue_read(struct queue_node *node, char *buf);
-extern int queue_write_test(struct queue_node *node);
-extern int queue_read_test(struct queue_node *node);
 
 #endif

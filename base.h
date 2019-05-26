@@ -4,6 +4,7 @@
 #include <queue.h>
 
 #define BUFFER_SIZE	0x40000
+#define MAX_DELAY	1000		/* usleep */
 
 /* virtual card node */
 struct vc_node {

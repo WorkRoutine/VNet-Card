@@ -34,15 +34,28 @@ void *send_procedure(void *arg)
 	int ret;
 
 	while (1) {
-		unsigned long count;	
-		char *tmp;
-		int i, j = 0;
+		long count;
+		int retry = 0;
 	
 		/* Read from Tun/Tap */
 		count = read(vc->tun_fd, (char *)vc->WBuf, BUFFER_SIZE);
+		if (count <= 0) {
+			/* no data and sleep */
+			usleep(MAX_DELAY);
+			continue;
+		}
 		ret = queue_write(vc->queue, vc->WBuf, count);
 		while (ret == -EAGAIN) {
-			sleep(1); /* need optimization */
+			if (retry > 100) {
+				/* give up send message */
+				usleep(MAX_DELAY);
+				retry = 0;
+				/* clear write queue */
+				queue_clear(vc->queue);
+				continue;
+			}
+			retry++;
+			usleep(MAX_DELAY); /* need optimization */
 			ret = queue_write(vc->queue, vc->WBuf, count);
 		}
 	}
@@ -55,7 +68,7 @@ void *recv_procedure(void *arg)
 	int ret;
 
 	while (1) {
-		unsigned long count;
+		long count;
 
 		count = queue_read(vc->queue, vc->RBuf);
 
@@ -67,7 +80,7 @@ void *recv_procedure(void *arg)
 			ret = write(vc->tun_fd, (char *)vc->RBuf, count);
 			while (retry_num) {
 				if (ret < 0) {
-					sleep(1); /* retry tap/tun */
+					usleep(MAX_DELAY); /* retry tap/tun */
 				} else {
 					retry_num  -= ret;
 					finish_num += ret;
@@ -80,7 +93,7 @@ void *recv_procedure(void *arg)
 			}
 		} else {
 			/* no data */
-			sleep(1);
+			usleep(MAX_DELAY);
 		}
 	}
 }

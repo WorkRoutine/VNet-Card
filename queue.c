@@ -89,98 +89,16 @@ static void queue_unmap(struct queue_node *node)
 	munmap((void *)node->Rqueue, node->Rqueue_size);
 }
 
-#include <sys/time.h>
-#include <time.h>
-static unsigned long Value = 0;
-
-int queue_write_test(struct queue_node *node)
-{
-	uint32_t *pData = (uint32_t *)((unsigned long)node->Wqueue + QUE_DATA);
-	unsigned long Count = 0;
-	unsigned long Total = 0;
-
-	while (1) {
-		long cnt = 8192 - queueW_cnt_get(node);
-
-		if (cnt < 4096) {
-			usleep(200);
-			continue;
-		} else {
-			int i;
-			struct timeval start;
-			struct timeval end;
-
-			gettimeofday(&start,NULL);
-			for (i = 0; i < cnt; i++) {
-				*pData = Value++;
-			}
-			gettimeofday(&end,NULL);
-			Total += end.tv_sec * 1000000 + end.tv_usec - 
-				  (start.tv_sec * 1000000 + start.tv_usec);
-
-			Count += cnt;
-			if (Count > 4000000) {
-				printf("Rate: %f Mbps\n",
-						 (float)(Count * 4 * 8) / (float)Total);
-				Count = 0;
-				Total = 0;
-			}
-		}
-	}
-		
-	return 0;
-}
-
-
-int queue_read_test(struct queue_node *node)
-{
-	uint32_t *pData = (uint32_t *)((unsigned long)node->Rqueue + QUE_DATA);
-	unsigned long Total = 0;
-	long Done_size = 0;
-
-	while (1) {
-		long cnt = queueR_cnt_get(node);
-
-		if (cnt < 4096) {
-			usleep(200);
-			continue;
-		} else {
-			int i;
-			unsigned int value;
-			struct timeval start;
-			struct timeval end;
-
-			gettimeofday(&start,NULL);
-			for (i = 0; i < cnt; i++)
-				value = *pData;
-			gettimeofday(&end,NULL);
-			Total += end.tv_sec * 1000000 + end.tv_usec - 
-				  (start.tv_sec * 1000000 + start.tv_usec);
-
-			Done_size += cnt;
-			if (Done_size > 4000000) {
-				printf("Read %ld Time %f\n", Done_size,
-							 (float)Total);
-				printf("Rate: %f Mbps\n",
-                                                 (float)(Done_size * 4 * 8) / (float)Total);
-				Done_size = 0;
-				Total = 0;
-			}
-		}
-	}
-
-	return 0;
-}
-
 /* queue read */
-int queue_write(struct queue_node *node, const char *buf, int count)
+int queue_write(struct queue_node *node, const unsigned char *buf, int count)
 {
-	int i;
 	long valid_count = 0;
-	int done_size = count;
-	int first_frame = 1;
-
-	queue_data_write(node, 0xEF);
+	struct queue_head msg = {
+		.msg_head = QUEUE_HEAD_MAGIC,
+		.length = 0,
+	};
+	queue_t *pData;
+	int i, j = 0;
 
 	if (!buf) {
 		printf("Empty data to write\n");
@@ -189,37 +107,29 @@ int queue_write(struct queue_node *node, const char *buf, int count)
 
 	/* valid byte to write */
 	valid_count = QUEUE_SIZE - queueW_cnt_get(node);
-	valid_count *= 2;
+	if (valid_count - QUEUE_RESERVED < 0)
+		return -EAGAIN;
+	valid_count = valid_count * QUEUE_WIDTH - QUEUE_RESERVED;
 	if (count > valid_count)
 		return -EAGAIN;
 
-	/* Pls wait to test and next set */
+	msg.length = count;
+	pData = (queue_t *)((unsigned long)node->Wqueue + QUE_DATA);
+	/* Send Head */
+	*pData = msg.msg_head;
+	*pData = msg.length;
 
-	for (i = 0; i < count; i += 2) {
-		unsigned int data = 0;
+	for (i = 0; i < msg.length; i += QUEUE_WIDTH) {
+		queue_t value = 0;
 
-		if (done_size > 1) {
-			data |= (buf[i] & 0xFF) | ((buf[i+1] & 0xFF) << 8);
-			data |= DATA_FULL << 16;
-			done_size -= 2;
-		} else if (done_size = 1) {
-			data |= (buf[i] & 0xFF) | (0x00 << 8);
-			data |= DATA_HALF << 16;
-			done_size -= 1;
+		if ((msg.length - i) >= QUEUE_WIDTH) {
+			/* Need memcpy */
+			memcpy((char *)&value, &buf[i], QUEUE_WIDTH);
+		} else {
+			memcpy((char *)&value, &buf[i], msg.length - i);
 		}
-
-		/* Check endless */
-		if (!done_size) {
-			data |= FRAME_END << 24;
-		}
-
-		/* Frsit frame */
-		if (first_frame) {
-			data |= FRAME_FIRST << 24;
-			first_frame = 0;
-		}
-
-		queue_data_write(node, data & 0xFFFFFFFF);
+		/* Wait data into queue */
+		*pData = value;
 	}
 
 	return count;
@@ -227,46 +137,45 @@ int queue_write(struct queue_node *node, const char *buf, int count)
 
 int queue_read(struct queue_node *node, char *buf)
 {
-	int i;
 	int count;
 	unsigned int flags = queueR_flag_get(node);
-	int first = 1;
-	int done_size = 0;
+	queue_t *pData;
+	struct queue_head msg;
+	int i, j;
 
-	printf("DAFDSFASD: flags: %#x\n", flags);
+	/* Empty queue */
 	if (flags & 0x1)
 		return 0;
 
-	printf("DDDDD\n");
 	count = queueR_cnt_get(node);
 	if (!count)
 		return 0;
 
+	pData = (queue_t *)((unsigned long)node->Rqueue + QUE_DATA);
+	/* Read head of msg */
 	for (i = 0; i < count; i++) {
-		unsigned int data;
-		unsigned char half;
-
-		data = queue_data_read(node) & 0xFFFFFFFF;
-		half = (data >> 16) & 0xFF;
-
-		/* Head check */
-		if (first) {
-			if (((data >> 24) & 0xFF) == FRAME_FIRST)
-				first = 0;
-		}
-
-		if (half == DATA_FULL) {
-			buf[done_size++] = data & 0xFF;
-			buf[done_size++] = (data >> 8) & 0xFF;
-		} else if (half == DATA_HALF) {
-			buf[done_size++] = data & 0xFF;
-		}
-
-		if (((data >> 24) & 0xFF) == FRAME_END)
-			return done_size;
-		
+		msg.msg_head = *(queue_t *)pData;
+		if (msg.msg_head == QUEUE_HEAD_MAGIC)
+			break;
 	}
-	return count;
+	/* Can't find valid frame */
+	if (i == count)
+		return 0;
+
+	msg.length = *(queue_t *)pData;
+
+	for (i = 0; i < msg.length; i+= QUEUE_WIDTH) {
+		queue_t value = *(queue_t *)pData;
+
+		if ((msg.length - i) >= QUEUE_WIDTH) {
+			/* Need memcpy */
+			memcpy(&buf[i], (char *)&value, QUEUE_WIDTH);
+		} else {
+			memcpy(&buf[i], (char *)&value, msg.length - i);
+		}
+	}
+
+	return msg.length;
 }
 
 /* initialize queue */
