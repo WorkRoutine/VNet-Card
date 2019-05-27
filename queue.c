@@ -98,6 +98,8 @@ int queue_write(struct queue_node *node, const unsigned char *buf, int count)
 		.length = 0,
 	};
 	queue_t *pData;
+	int full_count, ualign_count;
+	queue_t *pos, vdata = 0;
 	int i, j = 0;
 
 	if (!buf) {
@@ -118,6 +120,29 @@ int queue_write(struct queue_node *node, const unsigned char *buf, int count)
 	/* Send Head */
 	*pData = msg.msg_head;
 	*pData = msg.length;
+
+	full_count = msg.length / QUEUE_WIDTH;
+	ualign_count = msg.length % QUEUE_WIDTH;
+	pos = (queue_t *)buf;
+
+        for (i = 0; i < full_count; i++) {
+                *(queue_t *)pData = *pos;
+                pos++;
+        }
+
+        if (ualign_count == 0)
+                return msg.length;
+
+        for (i = 0; i < ualign_count; i++) {
+		vdata |= (buf[full_count * QUEUE_WIDTH + i] & 0xFF) 
+				<< (i * 8);
+        }
+	*pData = vdata;
+
+        return msg.length;
+
+
+
 
 	for (i = 0; i < msg.length; i += QUEUE_WIDTH) {
 		queue_t value = 0;
@@ -141,6 +166,8 @@ int queue_read(struct queue_node *node, char *buf)
 	unsigned int flags = queueR_flag_get(node);
 	queue_t *pData;
 	struct queue_head msg;
+	int full_count, ualign_count;
+	queue_t *pos, vdata;
 	int i, j;
 
 	/* Empty queue */
@@ -164,15 +191,22 @@ int queue_read(struct queue_node *node, char *buf)
 
 	msg.length = *(queue_t *)pData;
 
-	for (i = 0; i < msg.length; i+= QUEUE_WIDTH) {
-		queue_t value = *(queue_t *)pData;
+	full_count = msg.length / QUEUE_WIDTH;
+	ualign_count = msg.length % QUEUE_WIDTH;
+	pos = (queue_t *)buf;
 
-		if ((msg.length - i) >= QUEUE_WIDTH) {
-			/* Need memcpy */
-			memcpy(&buf[i], (char *)&value, QUEUE_WIDTH);
-		} else {
-			memcpy(&buf[i], (char *)&value, msg.length - i);
-		}
+	for (i = 0; i < full_count; i++) {
+		*pos = *(queue_t *)pData;
+		pos++;
+	}
+
+	if (ualign_count == 0)
+		return msg.length;
+
+	vdata = *(queue_t *)pData;
+	for (i = 0; i < ualign_count; i++) {
+		buf[full_count * QUEUE_WIDTH + i] =
+				(vdata >> (i * 8) & 0xFF);
 	}
 
 	return msg.length;

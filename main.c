@@ -52,6 +52,7 @@ void *send_procedure(void *arg)
 				retry = 0;
 				/* clear write queue */
 				queue_clear(vc->queue);
+				printf("Clear Queueu......\n");
 				continue;
 			}
 			retry++;
