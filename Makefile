@@ -4,14 +4,14 @@ CROSS_CC=
 CROSS_CC=/xspace/OpenSource/BiscuitOS/BiscuitOS/output/linux-newest-arm64/aarch64-linux-gnu/aarch64-linux-gnu/bin/aarch64-linux-gnu-gcc
 
 ## CFLAGS
-CFLAGS += -I./ -lpthread -g
+CFLAGS += -I./ -lpthread
 
-CONFIG_ALL := -DCONFIG_PERF_TEST
+#CONFIG_ALL := -DCONFIG_SOCKET_DEBUG
 SRC := main.c base.c signal.c
 
 # CONFIG_DMA_QUEUE
 # 
-SRC        += queue.c tap_tun.c 
+SRC        += queue.c tap_tun.c dma.c
 
 # CONFIG_
 

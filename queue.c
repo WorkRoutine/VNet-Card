@@ -90,126 +90,64 @@ static void queue_unmap(struct queue_node *node)
 }
 
 /* queue read */
-int queue_write(struct queue_node *node, const unsigned char *buf, int count)
+int queue_send_msg(struct queue_node *node, unsigned long index, 
+						unsigned long count)
 {
-	long valid_count = 0;
+	int valid_count = 0;
 	struct queue_head msg = {
 		.msg_head = QUEUE_HEAD_MAGIC,
-		.length = 0,
+		.index = index,
+		.count = count,
 	};
-	queue_t *pData;
-	int full_count, ualign_count;
-	queue_t *pos, vdata = 0;
-	int i, j = 0;
-
-	if (!buf) {
-		printf("Empty data to write\n");
-		return -EINVAL;
-	}
+	queue_t *pData = (queue_t *)((unsigned long)node->Wqueue + QUE_DATA);
 
 	/* valid byte to write */
 	valid_count = QUEUE_SIZE - queueW_cnt_get(node);
 	if (valid_count - QUEUE_RESERVED < 0)
 		return -EAGAIN;
-	valid_count = valid_count * QUEUE_WIDTH - QUEUE_RESERVED;
-	if (count > valid_count)
-		return -EAGAIN;
 
-	msg.length = count;
-	pData = (queue_t *)((unsigned long)node->Wqueue + QUE_DATA);
-	/* Send Head */
-	*pData = msg.msg_head;
-	*pData = msg.length;
-
-	full_count = msg.length / QUEUE_WIDTH;
-	ualign_count = msg.length % QUEUE_WIDTH;
-	pos = (queue_t *)buf;
-
-        for (i = 0; i < full_count; i++) {
-                *(queue_t *)pData = *pos;
-                pos++;
-        }
-
-        if (ualign_count == 0)
-                return msg.length;
-
-        for (i = 0; i < ualign_count; i++) {
-		vdata |= (buf[full_count * QUEUE_WIDTH + i] & 0xFF) 
-				<< (i * 8);
-        }
-	*pData = vdata;
-
-        return msg.length;
-
-
-
-
-	for (i = 0; i < msg.length; i += QUEUE_WIDTH) {
-		queue_t value = 0;
-
-		if ((msg.length - i) >= QUEUE_WIDTH) {
-			/* Need memcpy */
-			memcpy((char *)&value, &buf[i], QUEUE_WIDTH);
-		} else {
-			memcpy((char *)&value, &buf[i], msg.length - i);
-		}
-		/* Wait data into queue */
-		*pData = value;
-	}
-
-	return count;
+	/* Send a message */
+	*pData = (queue_t)msg.msg_head;
+	*pData = (queue_t)msg.index;
+	*pData = (queue_t)msg.count;
+	return 0;	
 }
 
-int queue_read(struct queue_node *node, char *buf)
+int queue_recv_msg(struct queue_node *node, unsigned long *index,
+						unsigned long *count)
 {
-	int count;
 	unsigned int flags = queueR_flag_get(node);
-	queue_t *pData;
 	struct queue_head msg;
-	int full_count, ualign_count;
-	queue_t *pos, vdata;
-	int i, j;
+	queue_t *pData;
+	int nbyte, i;
 
 	/* Empty queue */
 	if (flags & 0x1)
-		return 0;
+		return 1;
 
-	count = queueR_cnt_get(node);
-	if (!count)
-		return 0;
+	nbyte = queueR_cnt_get(node);
+	if (!nbyte)
+		return 1;
 
 	pData = (queue_t *)((unsigned long)node->Rqueue + QUE_DATA);
 	/* Read head of msg */
-	for (i = 0; i < count; i++) {
+	for (i = 0; i < nbyte; i++) {
 		msg.msg_head = *(queue_t *)pData;
 		if (msg.msg_head == QUEUE_HEAD_MAGIC)
 			break;
 	}
+
 	/* Can't find valid frame */
-	if (i == count)
-		return 0;
+	if (i == nbyte)
+		return 1;
 
-	msg.length = *(queue_t *)pData;
+	msg.index = *(queue_t *)pData;
+	msg.count = *(queue_t *)pData;
 
-	full_count = msg.length / QUEUE_WIDTH;
-	ualign_count = msg.length % QUEUE_WIDTH;
-	pos = (queue_t *)buf;
+	*index = msg.index;
+	*count = msg.count;
 
-	for (i = 0; i < full_count; i++) {
-		*pos = *(queue_t *)pData;
-		pos++;
-	}
-
-	if (ualign_count == 0)
-		return msg.length;
-
-	vdata = *(queue_t *)pData;
-	for (i = 0; i < ualign_count; i++) {
-		buf[full_count * QUEUE_WIDTH + i] =
-				(vdata >> (i * 8) & 0xFF);
-	}
-
-	return msg.length;
+	return 0;
 }
 
 /* initialize queue */

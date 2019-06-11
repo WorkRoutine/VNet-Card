@@ -27,76 +27,128 @@
 /* core header file */
 #include <base.h>
 
+static int data_send(struct vc_node *vc)
+{
+	long index, count;
+	int ret;
+
+	/* Send DMA buffer */
+	ret = dma_buffer_send(vc, &index, &count);
+	if (ret < 0) {
+		printf("ERROR: DMA failed.\n");
+		return -EINVAL;
+	}
+
+	/* Notify FPGA by queue */
+	ret = queue_send_msg(vc->queue, index, count);
+	if (ret < 0) {
+		printf("ERROR: Queue failed.\n");
+		return -EINVAL;
+	}
+	return 0;
+}
+
 /* Send procedure */
 void *send_procedure(void *arg)
 {
-	struct vc_node *vc = (struct vc_node *)arg;	
+	struct vc_node *vc = (struct vc_node *)arg;
+	long timeout = 0;
 	int ret;
 
 	while (1) {
-		long count;
-		int retry = 0;
-	
+		int count;
+
 		/* Read from Tun/Tap */
 		count = read(vc->tun_fd, (char *)vc->WBuf, BUFFER_SIZE);
-		if (count <= 0) {
-			/* no data and sleep */
-			usleep(MAX_DELAY);
-			continue;
-		}
-		ret = queue_write(vc->queue, vc->WBuf, count);
-		while (ret == -EAGAIN) {
-			if (retry > 100) {
-				/* give up send message */
-				usleep(MAX_DELAY);
-				retry = 0;
-				/* clear write queue */
-				queue_clear(vc->queue);
-				printf("Clear Queueu......\n");
-				continue;
+
+		/* Route 0: Timeout */
+		if (count < 0) {
+			/* No data to from Tun/Tap */
+			usleep(MAX_DELAY_TAP);
+			timeout++;
+			if (timeout > MAX_TRANS_TIMEOUT) {
+				timeout = 0;
+
+				/* No data on DMA Buffer */
+				if (!vc->ring_count) {
+					usleep(MAX_DELAY);
+					continue;
+				}
+
+				/* Send DMA buffer */
+				ret = data_send(vc);
+				if (ret < 0) {
+					exit(1);
+				}
 			}
-			retry++;
-			usleep(MAX_DELAY); /* need optimization */
-			ret = queue_write(vc->queue, vc->WBuf, count);
+		} else { /* Route 1: Fill buffer */
+#ifdef CONFIG_SOCKET_DEBUG
+#ifdef CONFIG_HOST
+			debug_dump_socket_frame(vc->WBuf, count, "Send");
+#endif
+#endif
+			if (dma_buffer_is_full(vc, count)) {
+				ret = data_send(vc);
+				if (ret < 0) {
+					exit(1);
+				}
+			}
+			/* fill buffer */
+			dma_buffer_fill(vc, vc->WBuf, count);
 		}
 	}
+
 }
 
-/* Rece procedure */
+#/* Rece procedure */
 void *recv_procedure(void *arg)
 {
 	struct vc_node *vc = (struct vc_node *)arg;
 	int ret;
 
 	while (1) {
-		long count;
+		unsigned long index, count;
+		int i, nbytes;
 
-		count = queue_read(vc->queue, vc->RBuf);
-
-		if (count > 0) {
-			unsigned long retry_num = count;
-			unsigned long finish_num = 0;
-
-			/* Receive data */
-			ret = write(vc->tun_fd, (char *)vc->RBuf, count);
-			while (retry_num) {
-				if (ret < 0) {
-					usleep(MAX_DELAY); /* retry tap/tun */
-				} else {
-					retry_num  -= ret;
-					finish_num += ret;
-				}
-				if (!retry_num)
-					break;
-		
-				ret = write(vc->tun_fd, (char *)vc->RBuf + 
-						finish_num, retry_num);
-			}
-		} else {
-			/* no data */
+		ret = queue_recv_msg(vc->queue, &index, &count);
+		if (ret != 0) {
+			/* No data, sleep */
 			usleep(MAX_DELAY);
+			continue;
+		} else {
+retry:
+			/* Recv DMA buffer */
+			ret = dma_buffer_recv(vc, index, count);
+			if (ret < 0) {
+				printf("ERROR: can't recv DMA.\n");
+				usleep(100);
+				goto retry;
+			}
+			/* split tun/tap frame */
+			for (i = 0; i < count; i++) {
+				ret = dma_buffer_split(vc, (char *)vc->RBuf,
+								&nbytes);
+				if (ret < 0) {
+					printf("NO DATA..\n\n\n");
+					continue;
+				}
+#ifdef CONFIG_SOCKET_DEBUG
+#ifdef CONFIG_FPGA
+				debug_dump_socket_frame(vc->RBuf, nbytes, 
+								   "Recv");
+#endif
+#endif
+				ret = write(vc->tun_fd, (char *)vc->RBuf, 
+								nbytes);
+				if (ret < 0) {
+					printf("Tun/Tap suspend...\n");
+					usleep(1000);
+					continue;
+				}
+			}
 		}
 	}
+
 }
 
 /*

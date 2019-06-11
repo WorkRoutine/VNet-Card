@@ -51,6 +51,7 @@ struct vc_node Defnode = {
 struct vc_node *vc_init(void)
 {
 	struct vc_node *vc;
+	int fd;
 
 	vc = vc_root();
 
@@ -64,7 +65,7 @@ struct vc_node *vc_init(void)
 		goto err_tun;
 	}
 
-	/* Buffer */
+	/* Tap/Tun Write Buffer */
 	vc->WBuf = (char *)malloc(BUFFER_SIZE);
 	if (!vc->WBuf) {
 		printf("ERROR: No enough memory for WBuf\n");
@@ -72,6 +73,7 @@ struct vc_node *vc_init(void)
 	}
 	memset(vc->WBuf, 0, BUFFER_SIZE);
 
+	/* Tap/Tun Read Buffer */
 	vc->RBuf = (char *)malloc(BUFFER_SIZE);
 	if (!vc->RBuf) {
 		printf("ERROR: No enough memory for RBuf.\n");
@@ -79,11 +81,72 @@ struct vc_node *vc_init(void)
 	}
 	memset(vc->RBuf, 0, BUFFER_SIZE);
 
+#ifdef CONFIG_HOST
+	/* DMA */
+	vc->Xdma = xdma_open();
+	if (vc->Xdma == NULL) {
+		printf("ERROR: Unable to open DMA Channel!\n");
+		goto err_dma;
+	}
+#endif
+
+	/* Write RingBuf */
+#ifdef CONFIG_HOST
+	vc->RingBuf = (unsigned char *)align_alloc(RINGBUF_SIZE);
+#else /* FPGA */
+	fd = open("/dev/mem", O_RDWR | O_SYNC);
+	if (fd < 0)
+		goto err_share_mem;
+	vc->RingBuf = (unsigned char *)mmap(0, RINGBUF_SIZE, 
+				PROT_READ | PROT_WRITE, MAP_SHARED, fd, 
+						(off_t)READ_PHY_ADDR);
+#endif
+	if (!vc->RingBuf) {
+		printf("ERROR: Unable to alloc RingBuf.\n");
+		goto err_ringbuf;
+	}
+	vc->ring_index = 0;
+	vc->ring_count = 0;
+	vc->pos = 0;
+
+	/* Read RingBuf */
+#ifdef CONFIG_HOST
+	vc->RingBuf2 = (unsigned char *)align_alloc(RINGBUF_SIZE);
+#else /* FPGA */
+	vc->RingBuf2 = (unsigned char *)mmap(0, RINGBUF_SIZE, 
+				PROT_READ | PROT_WRITE, MAP_SHARED, fd, 
+						(off_t)WRITE_PHY_ADDR);
+	close(fd); /* pre-relase mmap-handle */
+#endif
+	if (!vc->RingBuf2) {
+		printf("ERROR: Unable to alloc RingBuf2.\n");
+		goto err_ringbuf2;
+	}
+	vc->ring_index2 = 0;
+	vc->ring_count2 = 0;
+	vc->pos2 = 0;
+
 	/* Signal */
 	signal_init();
 
 	return vc;
 
+#ifdef CONFIG_HOST
+err_ringbuf2:
+	free(vc->RingBuf);
+err_ringbuf:
+	xdma_close(vc->Xdma);
+err_dma:
+	free(vc->RBuf);
+#endif
+#ifdef CONFIG_FPGA
+err_ringbuf2:
+	munmap((void *)vc->RingBuf, RINGBUF_SIZE);
+err_ringbuf:
+	close(fd);
+err_share_mem:
+	free(vc->RBuf);
+#endif
 err_RBuf:
 	free(vc->WBuf);
 err_WBuf:
@@ -97,6 +160,15 @@ err:
 /* Virtual Card exit-route */
 void vc_exit(struct vc_node *vc)
 {
+#ifdef CONFIG_HOST
+	free(vc->RingBuf2);
+	free(vc->RingBuf);
+	/* Exit dma */
+	xdma_close(vc->Xdma);
+#else
+	munmap((void *)vc->RingBuf2, RINGBUF_SIZE);
+	munmap((void *)vc->RingBuf, RINGBUF_SIZE);
+#endif
 	/* Free buffer */
 	free(vc->RBuf);
 	free(vc->WBuf);
@@ -107,4 +179,21 @@ void vc_exit(struct vc_node *vc)
 	/* Remove queue */
 	queue_exit(vc->queue);
 	printf("\nSafe exit virtual card!\n");
+}
+
+/* debug helper */
+void debug_dump_socket_frame(const char *buf, unsigned long count, 
+					const char *msg)
+{
+	int i, j = 0;
+
+	printf("\n*************%s-%ld*************\n", msg, count);
+	for (i = 0; i < count; i++, j++) {
+		if (j > 15) {
+			printf("\n");
+			j = 0;
+		}
+		printf("%#hhx ", buf[i]);
+	}
+	printf("\n\n");
 }

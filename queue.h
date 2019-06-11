@@ -39,8 +39,9 @@ struct queue_node {
 };
 
 struct queue_head {
-	uint64_t msg_head;
-	uint64_t length;
+	uint32_t msg_head;
+	uint32_t index;
+	uint32_t count;
 };
 
 static inline uint64_t queue_reg_read_64b(uint64_t reg)
@@ -120,7 +121,9 @@ static inline void queue_clear(struct queue_node *node)
 
 extern struct queue_node *queue_init(void);
 extern void queue_exit(struct queue_node *node);
-extern int queue_write(struct queue_node *node, const unsigned char *buf, int count);
-extern int queue_read(struct queue_node *node, char *buf);
+extern int queue_recv_msg(struct queue_node *node, unsigned long *index,
+                                                unsigned long *count);
+extern int queue_send_msg(struct queue_node *node, unsigned long index,
+                                                unsigned long count);
 
 #endif
