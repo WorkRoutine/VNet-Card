@@ -30,12 +30,12 @@ typedef uint32_t	queue_t;
 
 struct queue_node {
 	const char *name;
-	unsigned long Rqueue_base; /* Read Queue */
-	unsigned long Wqueue_base; /* Write Queue */
+	unsigned long Rqueue_base;	/* Read Queue */
+	unsigned long Wqueue_base;	/* Write Queue */
 	unsigned long Rqueue_size;
 	unsigned long Wqueue_size;
-	unsigned long Rqueue; /* Read Queue virtual address */
-	unsigned long Wqueue; /* Write Queue virtual address */
+	unsigned long Rqueue;		/* Read Queue virtual address */
+	unsigned long Wqueue;		/* Write Queue virtual address */
 };
 
 struct queue_head {

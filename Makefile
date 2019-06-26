@@ -5,17 +5,15 @@ CROSS_CC=
 ## CFLAGS
 CFLAGS += -I./ -lpthread -g
 
-# configuration
-#CONFIG_ALL += -DCONFIG_SOCKET_DEBUG
-#CONFIG_ALL += -DCONFIG_MSG_PARSE
+## Configuration
+# CONFIG_ALL += -DCONFIG_SOCKET_DEBUG
+# CONFIG_ALL += -DCONFIG_MSG_PARSE
 
 SRC := main.c base.c signal.c
 
 # CONFIG_DMA_QUEUE
 # 
 SRC        += queue.c tap_tun.c dma.c
-
-# CONFIG_
 
 all: Vnet_Host Vnet_FPGA
 

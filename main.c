@@ -1,5 +1,5 @@
 /*
- * Virtual net card.
+ * VnetCard
  *
  * (C) 2019.05.14 <buddy.zhang@aliyun.com>
  *
