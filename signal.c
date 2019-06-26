@@ -35,12 +35,10 @@ static void do_signal(int sig)
 		/* Relase */
 		vc = vc_root();
 
-		vc_exit(vc);
-		exit (1);
+		vc->flags = 0;	
 		break;
 	default:
 		fprintf(stderr, "Undefined signal.\n");
-		exit (1);
 	}
 }
 

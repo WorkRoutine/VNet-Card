@@ -110,6 +110,7 @@ int queue_send_msg(struct queue_node *node, unsigned long index,
 	*pData = (queue_t)msg.msg_head;
 	*pData = (queue_t)msg.index;
 	*pData = (queue_t)msg.count;
+
 	return 0;	
 }
 
@@ -126,7 +127,7 @@ int queue_recv_msg(struct queue_node *node, unsigned long *index,
 		return 1;
 
 	nbyte = queueR_cnt_get(node);
-	if (!nbyte)
+	if (!nbyte || nbyte == 1)
 		return 1;
 
 	pData = (queue_t *)((unsigned long)node->Rqueue + QUE_DATA);
@@ -162,5 +163,7 @@ struct queue_node *queue_init(void)
 
 void queue_exit(struct queue_node *node)
 {
+	/* Clear queue */
+	queue_clear(node);
 	queue_unmap(node);
 }

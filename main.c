@@ -55,7 +55,7 @@ void *send_procedure(void *arg)
 	long timeout = 0;
 	int ret;
 
-	while (1) {
+	while (vc->flags) {
 		int count;
 
 		/* Read from Tun/Tap */
@@ -64,7 +64,7 @@ void *send_procedure(void *arg)
 		/* Route 0: Timeout */
 		if (count < 0) {
 			/* No data to from Tun/Tap */
-			usleep(MAX_DELAY_TAP);
+			usleep(MAX_TIMEOUT_TAP);
 			timeout++;
 			if (timeout > MAX_TRANS_TIMEOUT) {
 				timeout = 0;
@@ -78,77 +78,101 @@ void *send_procedure(void *arg)
 				/* Send DMA buffer */
 				ret = data_send(vc);
 				if (ret < 0) {
-					exit(1);
+					printf("DMA ERROR on Timeout\n");
+					vc->flags = 0;
+					continue;
 				}
 			}
 		} else { /* Route 1: Fill buffer */
-#ifdef CONFIG_SOCKET_DEBUG
-#ifdef CONFIG_HOST
-			debug_dump_socket_frame(vc->WBuf, count, "Send");
-#endif
-#endif
-			if (dma_buffer_is_full(vc, count)) {
+			/* Transfer if frame number bigger then MAX_FRAME, 
+			 * or Buffer is full */
+			if (vc->ring_count > MAX_FRAME ||
+					dma_buffer_is_full(vc, count)) {
 				ret = data_send(vc);
 				if (ret < 0) {
-					exit(1);
+					printf("DMA SEND ERROR.\n");
+					vc->flags = 0;
+					continue;
 				}
 			}
 			/* fill buffer */
 			dma_buffer_fill(vc, vc->WBuf, count);
 		}
 	}
+	return NULL;
 
 }
 
-#/* Rece procedure */
+/* Rece procedure */
 void *recv_procedure(void *arg)
 {
 	struct vc_node *vc = (struct vc_node *)arg;
 	int ret;
+	int loss_count = 0;
 
-	while (1) {
+	while (vc->flags) {
 		unsigned long index, count;
-		int i, nbytes;
+		int i;
+		unsigned long nbytes;
 
 		ret = queue_recv_msg(vc->queue, &index, &count);
 		if (ret != 0) {
 			/* No data, sleep */
-			usleep(MAX_DELAY);
+#ifdef CONFIG_HOST
+			usleep(MAX_TIMEOUT_TAP);
+#else
+			usleep(MAX_TIMEOUT_TAP);
+#endif
 			continue;
 		} else {
-retry:
+			int retry = RETRY_MAX;
+
+retry_dma:
 			/* Recv DMA buffer */
 			ret = dma_buffer_recv(vc, index, count);
 			if (ret < 0) {
-				printf("ERROR: can't recv DMA.\n");
+				if (ret == -786) {
+					printf("Invalid DMA.\n");
+					usleep(100);
+					continue;
+				}
+				printf("Can't recv DMA: RET[%d].\n", ret);
 				usleep(100);
-				goto retry;
+				goto retry_dma;
 			}
+
 			/* split tun/tap frame */
 			for (i = 0; i < count; i++) {
 				ret = dma_buffer_split(vc, (char *)vc->RBuf,
-								&nbytes);
+							(int *)&nbytes);
 				if (ret < 0) {
 					printf("NO DATA..\n\n\n");
 					continue;
 				}
-#ifdef CONFIG_SOCKET_DEBUG
-#ifdef CONFIG_FPGA
-				debug_dump_socket_frame(vc->RBuf, nbytes, 
-								   "Recv");
-#endif
-#endif
+
+retry_tun:
 				ret = write(vc->tun_fd, (char *)vc->RBuf, 
 								nbytes);
 				if (ret < 0) {
-					printf("Tun/Tap suspend...\n");
-					usleep(1000);
-					continue;
+					loss_count++;
+					if (loss_count > 100) {
+						loss_count = 0;
+					}
+					if (retry) {
+						usleep(100);
+						retry--;
+						goto retry_tun;
+					} else {
+						/* loss package */
+						continue;
+					}
+
 				}
+				retry = RETRY_MAX;
 			}
 		}
 	}
-
+	return NULL;
 }
 
 /*
@@ -189,6 +213,7 @@ int main()
 	
 	/* exit... */
 	vc_exit(vc);
+	printf("Exit.....\n");
 
         return 0;
 }

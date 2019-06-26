@@ -1,12 +1,14 @@
-
+# SPDX-License-Identifier: GPL-2.0 
 HOST_CC=gcc
 CROSS_CC=
-CROSS_CC=/xspace/OpenSource/BiscuitOS/BiscuitOS/output/linux-newest-arm64/aarch64-linux-gnu/aarch64-linux-gnu/bin/aarch64-linux-gnu-gcc
 
 ## CFLAGS
-CFLAGS += -I./ -lpthread
+CFLAGS += -I./ -lpthread -g
 
-#CONFIG_ALL := -DCONFIG_SOCKET_DEBUG
+# configuration
+#CONFIG_ALL += -DCONFIG_SOCKET_DEBUG
+#CONFIG_ALL += -DCONFIG_MSG_PARSE
+
 SRC := main.c base.c signal.c
 
 # CONFIG_DMA_QUEUE

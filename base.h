@@ -5,18 +5,31 @@
 
 #define BUFFER_SIZE	0x40000
 #define MAX_DELAY	1000		/* usleep */
-#define MAX_TRANS_TIMEOUT	10
 #define MAX_DELAY_TAP	1000
+/* Timeout to Transfer */
+#define MAX_TIMEOUT_TAP		30
+#define MAX_TRANS_TIMEOUT	3
 
-#define RINGBUF_CHAIN_SIZE	0x100000
-#define RINGBUF_CHAIN_NUM	8
+#ifdef CONFIG_HOST
+/* Buffer full or Frame over */
+#define MAX_FRAME		200
+#else
+/* Buffer full or Frame over */
+#define MAX_FRAME		60
+#endif
+
+#define RINGBUF_CHAIN_SIZE	0x40000	// 256KB
+#define RINGBUF_CHAIN_NUM	32	//24
 #define RINGBUF_SIZE		(RINGBUF_CHAIN_SIZE * RINGBUF_CHAIN_NUM)
 #define RINGBUF_MAGIC		0x91101688
 
-#define H2C0_CH0	"/dev/xdma0_h2c_0"
-#define C2H0_CH0	"/dev/xdma0_c2h_0"
+#define H2C0_CH0	"/dev/xdma0_h2c_1"
+#define C2H0_CH0	"/dev/xdma0_c2h_1"
 #define WRITE_PHY_ADDR	0x3000000	
 #define READ_PHY_ADDR	(WRITE_PHY_ADDR + RINGBUF_SIZE)
+
+/* Loss package */
+#define RETRY_MAX	10
 
 #define ALIGN_4B(x)	((x+3)& ~3)
 
@@ -57,11 +70,21 @@ struct vc_node {
 	long ring_index2;
 	long ring_count2;
 	long pos2; /* point to current valid data area */
+#ifdef CONFIG_MSG_PARSE
+	int perf_fd;
+	int perf_fd2;
+#endif
+
+	/* Thread exit */
+	unsigned int flags;
 };
 
 struct msg_data {
 	uint32_t magic;
 	uint32_t count;
+#ifdef CONFIG_PERF
+	uint32_t id;
+#endif
 };
 
 extern struct vc_node Defnode;
@@ -82,7 +105,7 @@ extern int tun_create(char *dev, int flags, char *ip);
 extern void tun_release(int fd);
 
 /* DMA */
-extern void dma_test(struct vc_node *vc);
+extern void dma_diagnose(struct vc_node *vc);
 extern void *xdma_open(void);
 extern void xdma_close(xHdl hdl);
 extern uint8_t *align_alloc(uint32_t size);
@@ -98,6 +121,23 @@ extern int dma_buffer_recv(struct vc_node *vc, unsigned long index,
 					unsigned long count);
 extern void debug_dump_socket_frame(const char *buf, unsigned long count, 
 					const char *msg);
+extern long perf_time(void);
+extern void perf_speed(long start, long end);
+
+#ifdef CONFIG_MSG_PARSE
+struct msg_context {
+	uint64_t id;
+	uint64_t time;
+};
+extern void msg_parse_context(const char *buf, char *msg);
+extern void msg_store(struct vc_node *vc, struct msg_context *array, 
+                                        int limit, int w, char *str);
+
+#define MSG_CONTEXT_OFF		52
+#define MSG_CONTEXT_LEN		16
+#define MAX_INDEX		100
+#define LOOP_INDEX		(MAX_INDEX - 2)
+#endif
 
 static int inline dma_buffer_is_full(struct vc_node *vc, int count)
 {

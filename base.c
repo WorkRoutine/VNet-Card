@@ -28,7 +28,7 @@
 #include <net/route.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
+#include <sys/time.h>
 
 /* queue header file */
 #include <queue.h>
@@ -64,6 +64,19 @@ struct vc_node *vc_init(void)
 		printf("ERROR: Can't establish TUN\n");
 		goto err_tun;
 	}
+
+#ifdef CONFIG_MSG_PARSE
+	vc->perf_fd = open("./Perf_Winfo.info", O_RDWR | O_CREAT);
+	if (vc->perf_fd < 0) {
+		printf("Can't open pref_Winfo.info file\n");
+		goto err_file;
+	}
+	vc->perf_fd2 = open("./Perf_Rinfo.info", O_RDWR | O_CREAT);
+	if (vc->perf_fd2 < 0) {
+		printf("Can't open pref_Rinfo.info file\n");
+		goto err_file2;
+	}
+#endif
 
 	/* Tap/Tun Write Buffer */
 	vc->WBuf = (char *)malloc(BUFFER_SIZE);
@@ -129,7 +142,12 @@ struct vc_node *vc_init(void)
 	/* Signal */
 	signal_init();
 
+	/* Thread flags */
+	vc->flags = 1;
+
 	return vc;
+
+
 
 #ifdef CONFIG_HOST
 err_ringbuf2:
@@ -150,6 +168,12 @@ err_share_mem:
 err_RBuf:
 	free(vc->WBuf);
 err_WBuf:
+#ifdef CONFIG_MSG_PARSE
+	close(vc->perf_fd2);
+err_file2:
+	close(vc->perf_fd);
+err_file:
+#endif
 	close(vc->tun_fd);
 err_tun:
 	queue_exit(vc->queue);
@@ -173,6 +197,10 @@ void vc_exit(struct vc_node *vc)
 	free(vc->RBuf);
 	free(vc->WBuf);
 
+#ifdef CONFIG_MSG_PARSE
+	close(vc->perf_fd2);
+	close(vc->perf_fd);
+#endif
 	/* Remove TUN */
 	close(vc->tun_fd);
 
@@ -197,3 +225,48 @@ void debug_dump_socket_frame(const char *buf, unsigned long count,
 	}
 	printf("\n\n");
 }
+
+long perf_time(void)
+{
+	struct timeval tv;
+
+	gettimeofday(&tv, NULL);
+	return tv.tv_sec * 1000000 + tv.tv_usec;
+}
+
+void perf_speed(long start, long end)
+{
+	long time = end - start;
+
+	printf("Speed: %f (start: %ld end: %ld)\n", (float)1 / (float)time,
+			start, end);	
+}
+
+#ifdef CONFIG_MSG_PARSE
+static void msg_parse(const char *buf, char *msg, unsigned long offset, int len)
+{
+	memcpy(msg, (char *)((unsigned long)buf + offset), len);
+}
+
+void msg_parse_context(const char *buf, char *msg)
+{
+	msg_parse(buf, msg, MSG_CONTEXT_OFF, MSG_CONTEXT_LEN);
+}
+
+void msg_store(struct vc_node *vc, struct msg_context *array, 
+					int limit, int w, char *str)
+{
+	char bufx[120];
+	int i;
+
+	for (i = 0; i < limit; i++) {
+		sprintf(bufx, "%s---%ld\t\t%ld\n", str, array[i].id,
+					array[i].time);
+		if (w)
+			write(vc->perf_fd, bufx, strlen(bufx));
+		else 
+			write(vc->perf_fd2, bufx, strlen(bufx));
+	}
+}
+
+#endif

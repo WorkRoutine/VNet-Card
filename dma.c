@@ -57,8 +57,9 @@ int dma_buffer_split(struct vc_node *vc, char *buf, int *count)
 	int i;
 	
 	/* No data to read */
-	if (vc->ring_count2 <= 0)
+	if (vc->ring_count2 <= 0) {
 		return -ENOMEM;
+	}
 
 	/* Relocate to next frame */
 	pos = vc->pos2 + vc->ring_index2 * RINGBUF_CHAIN_SIZE;
@@ -99,29 +100,25 @@ int dma_buffer_send(struct vc_node *vc, unsigned long *index,
 {
 	unsigned long offset = vc->ring_index * RINGBUF_CHAIN_SIZE;
 	uint8_t *pos = (uint8_t *)((unsigned long)vc->RingBuf + offset);
-	int ret;
+	int ret, retry = 3;
 
-#ifdef CONFIG_DMA_DEBUG
-	uint8_t *debug_pos = (uint8_t *)((unsigned long)vc->RingBuf2 + offset);
-	memcpy(debug_pos, pos, RINGBUF_CHAIN_SIZE);
-#else
 #ifdef CONFIG_HOST
 	ret = xdma_write(pos, RINGBUF_CHAIN_SIZE, offset, vc->Xdma);
 	if (ret < 0) {
-		return -EINVAL;
+		return ret;
 	}
 
 	/* Retry */
-	while (ret != RINGBUF_CHAIN_SIZE) {
+	while (ret != RINGBUF_CHAIN_SIZE && retry) {
 		/* Need retry */
 		usleep(MAX_DELAY);
 		ret = xdma_write(pos, RINGBUF_CHAIN_SIZE, offset, vc->Xdma);
-		if (ret < 0) {
-			return -EINVAL;
+		if (ret < 0 || !retry) {
+			return ret;
 		}
+		retry--;
 	}
 #endif /* X86 HOST */
-#endif
 
 	/* Update index and count */
 	*index = vc->ring_index;
@@ -144,27 +141,30 @@ int dma_buffer_recv(struct vc_node *vc, unsigned long index,
 #ifdef CONFIG_HOST
 	unsigned long offset = RINGBUF_CHAIN_SIZE * index;
 	uint8_t *pos = (uint8_t *)((unsigned long)vc->RingBuf2 + offset);
-	int ret;
+	long ret, retry = 3;
 
-#ifndef CONFIG_DMA_DEBUG
+	if (index > RINGBUF_CHAIN_NUM || index < 0) {
+		/* Invalid index from queue */
+		return -786;
+	}
+
 	/* Recevice Data from FPGA */
 	ret = xdma_read(pos, RINGBUF_CHAIN_SIZE, offset, vc->Xdma);
 	if (ret < 0) {
-		sleep(1);
-		return -EINVAL;
+		usleep(MAX_DELAY);
+		return ret;
 	}
 
 	/* Retry */
-	while (ret != RINGBUF_CHAIN_SIZE) {
+	while (ret != RINGBUF_CHAIN_SIZE && retry) {
 		/* Need retry */
 		usleep(MAX_DELAY);
 		ret = xdma_read(pos, RINGBUF_CHAIN_SIZE, offset, vc->Xdma);
-		if (ret < 0) {
-			return -EINVAL;
+		if (ret < 0 || !retry) {
+			return ret;
 		}
+		retry--;
 	}
-#endif
-
 #endif /* X86 HOST */
 
 	/* Update ringbuf */
@@ -265,21 +265,20 @@ uint8_t *align_alloc(uint32_t size)
 	return (uint8_t *)p;
 }
 
-void dma_test(struct vc_node *vc)
+void dma_diagnose(struct vc_node *vc)
 {
 #ifdef CONFIG_HOST
 	char *RBuf = (unsigned char *)align_alloc(4096);
 	char *WBuf = (unsigned char *)align_alloc(4096);
 
 	strcpy(WBuf, "Hello BiscuitOS");
-	while (1) {
+	while (vc->flags) {
 		int ret;
 		/* Write to DMA */
 		ret = xdma_write(WBuf, 4096, 0, vc->Xdma);
 		if (ret < 0)
 			xdma_write(WBuf, 4096, 0, vc->Xdma);
 		sleep(1);
-		printf("AAAA\n");
 		memset(RBuf, 0, 100);
 		xdma_read(RBuf, 12, 0, vc->Xdma);
 		printf("Buf: %s\n", RBuf);
